@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Produtividade - Team View</title>
+    <style>
+        /* --- VARIÁVEIS E BASE --- */
+        :root {
+            --bg: #0f172a;           
+            --card: #1e293b;         
+            --text: #f1f5f9;         
+            --muted: #94a3b8;        
+            --accent: #38bdf8;       
+            --danger: #ef4444;       
+            --success: #10b981;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        /* --- ESTILOS DE TABS (Mantidos) --- */
+        .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin-top: 10px; padding: 0 20px; }
+        .tab-btn { background: none; border: none; color: var(--muted); font-size: 16px; padding: 12px 0; cursor: pointer; position: relative; }
+        .tab-btn.active { color: var(--text); font-weight: 700; }
+        .tab-btn.active::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 100%; height: 2px; background: var(--accent); box-shadow: 0 -2px 10px var(--accent); }
+
+        main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+
+        /* --- CARD STYLE --- */
+        .card-container {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+        .card-container:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); border-color: var(--accent); }
+
+        .grade-badge { position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; z-index: 2; backdrop-filter: blur(4px); }
+        .grade-special { background: linear-gradient(135deg, #ef4444, #b91c1c); color: white; }
+        .grade-1 { background: #2563eb; color: white; }
+        .grade-user { background: #059669; color: white; }
+
+        .avatar { width: 100%; height: 220px; border-radius: 8px; object-fit: cover; background: #111827; margin-bottom: 12px; opacity: 0.9; }
+        .name { font-weight: 700; margin: 0; font-size: 17px; color: var(--text); }
+        .role { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 4px; text-transform: uppercase; }
+        .short { color: var(--muted); margin-top: 8px; font-size: 13px; line-height: 1.4; flex-grow: 1; min-height: 40px; }
+        
+        .tags { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+        .tag { font-size: 11px; padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid var(--border); }
+
+        /* --- MODAL --- */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(8px); padding: 20px; }
+        .modal { width: min(850px, 100%); background: var(--card); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .modal-content { display: flex; gap: 32px; padding: 32px; }
+        .thumb { width: 280px; height: 350px; border-radius: 12px; object-fit: cover; flex-shrink: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+        .close { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.1); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; transition: 0.2s; }
+        .close:hover { background: var(--danger); }
+
+        @media (max-width: 750px) {
+            .modal-content { flex-direction: column; align-items: center; }
+            .thumb { width: 100%; height: 200px; }
+        }
+
+        /* --- INTERFACE INTERNA DO MODAL --- */
+        .right-panel { flex: 1; width: 100%; }
+        
+        .input-group { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); border-left: 3px solid var(--success); }
+        .readonly-msg { background: rgba(239, 68, 68, 0.1); color: var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--danger); font-weight: bold; text-align: center; font-size: 0.9rem; }
+        
+        input { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+        button.action-btn { background: var(--accent); color: #000; font-weight: bold; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; transition: 0.2s; }
+        button.action-btn:hover { filter: brightness(1.1); }
+        
+        .history-list { list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto; }
+        .history-item { background: rgba(255,255,255,0.03); padding: 10px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid var(--accent); }
+        
+        .delete-btn { background: none; border: none; color: var(--danger); font-weight: bold; cursor: pointer; margin-left: 10px; opacity: 0.5; }
+        .delete-btn:hover { opacity: 1; }
+
+        /* Login Screen */
+        #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 999; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: var(--card); padding: 40px; border-radius: 16px; width: 100%; max-width: 400px; border: 1px solid var(--border); text-align: center; }
+        .hidden { display: none !important; }
+
+        /* Nav */
+        .top-nav { display: flex; justify-content: space-between; padding: 20px; align-items: center; }
+        .logout-btn { background: none; border: 1px solid var(--danger); color: var(--danger); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+        .logout-btn:hover { background: var(--danger); color: white; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <h2 style="color: white; margin-bottom: 20px;">Portal da Equipe</h2>
+            <input type="text" id="username" placeholder="Usuário">
+            <input type="password" id="password" placeholder="Senha">
+            <button class="action-btn" onclick="fazerLogin()">Entrar</button>
+            <p style="color: var(--muted); font-size: 0.8rem; margin-top: 20px;">
+                <b>Admin:</b> admin / admin<br>
+                <b>Users:</b> user1, user2 ou user3 / 1234
+            </p>
+        </div>
+    </div>
+
+    <div id="main-app" class="hidden">
+        
+        <div class="top-nav">
+            <div class="tabs">
+                <button class="tab-btn active">Visão Geral da Equipe</button>
+            </div>
+            <div>
+                <span id="welcome-msg" style="color: var(--muted); margin-right: 15px; font-size: 0.9rem;"></span>
+                <button class="logout-btn" onclick="logout()">Sair</button>
+            </div>
+        </div>
+
+        <main>
+            <div class="grid" id="users-grid">
+                </div>
+        </main>
+    </div>
+
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+        <div class="modal">
+            <button class="close" onclick="fecharModal()">×</button>
+            <div class="modal-content">
+                <img src="" id="modal-avatar" class="thumb" alt="Avatar">
+                
+                <div class="right-panel">
+                    <h2 id="modal-name">Nome do User</h2>
+                    <p class="role" id="modal-role">CARGO</p>
+                    
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                        <div class="tag" style="font-size: 14px; padding: 8px 12px;">Acumulado: <strong id="modal-total-hours" style="color:white">00:00</strong></div>
+                        <div class="tag" style="font-size: 14px; padding: 8px 12px;">Produção: <strong id="modal-total-qtd" style="color:white">0</strong></div>
+                    </div>
+
+                    <div id="readonly-msg" class="readonly-msg hidden">
+                        🔒 Modo Visualização: Você não pode editar os dados deste usuário.
+                    </div>
+
+                    <div id="form-container" class="input-group hidden">
+                        <h4 style="margin: 0 0 10px 0; color: var(--success);">Adicionar Produção</h4>
+                        <input type="text" id="input-desc" placeholder="Descrição da atividade (ex: Separação, Montagem...)">
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="input-qtd" placeholder="Qtd. Peças">
+                            <input type="time" id="input-time">
+                        </div>
+                        <button class="action-btn" onclick="salvarAtividade()">Registrar Dados</button>
+                    </div>
+
+                    <h4 style="color: var(--muted); margin-bottom: 10px;">Histórico de Atividades</h4>
+                    <ul id="history-list" class="history-list">
+                        </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DADOS MOCKADOS ---
+        const usersDB = [
+            { id: 1, user: "admin", pass: "admin", name: "Administrador", role: "admin", avatar: "https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff" },
+            { id: 2, user: "user1", pass: "1234", name: "Luan", role: "operador", avatar: "https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff" },
+            { id: 3, user: "user2", pass: "1234", name: "Rapha", role: "operador", avatar: "https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff" },
+            { id: 4, user: "user3", pass: "1234", name: "Maike", role: "supervisor", avatar: "https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff" }
+        ];
+
+        let currentUser = null;
+        let selectedUserForModal = null;
+        let activities = JSON.parse(localStorage.getItem('activities_db')) || [];
+
+        // --- LOGIN ---
+        function fazerLogin() {
+            const userIn = document.getElementById('username').value;
+            const passIn = document.getElementById('password').value;
+            const found = usersDB.find(u => u.user === userIn && u.pass === passIn);
+
+            if (found) {
+                currentUser = found;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('welcome-msg').innerText = `${currentUser.name} (${currentUser.role})`;
+                renderGrid();
+            } else {
+                alert("Login inválido!");
+            }
+        }
+
+        function logout() { location.reload(); }
+
+        // --- UTILITÁRIOS DE TEMPO ---
+        function timeToMin(t) { if(!t) return 0; const [h, m] = t.split(':').map(Number); return (h * 60) + m; }
+        function minToTime(m) { const h = Math.floor(m / 60); const mn = m % 60; return `${String(h).padStart(2,'0')}h ${String(mn).padStart(2,'0')}m`; }
+
+        // --- RENDERIZAÇÃO DA GRID ---
+        function renderGrid() {
+            const grid = document.getElementById('users-grid');
+            grid.innerHTML = '';
+
+            // MUDANÇA: Todos os usuários são exibidos, independente do login
+            usersDB.forEach(user => {
+                const userActs = activities.filter(a => a.userId === user.id);
+                const totalQtd = userActs.reduce((acc, curr) => acc + curr.qtd, 0);
+                const totalMin = userActs.reduce((acc, curr) => acc + timeToMin(curr.time), 0);
+                
+                let badgeClass = user.role === 'admin' ? 'grade-special' : (user.role === 'supervisor' ? 'grade-1' : 'grade-user');
+                let badgeText = user.role === 'admin' ? 'Admin' : (user.role === 'supervisor' ? 'Superv.' : 'Staff');
+
+                // Destaque visual para o próprio usuário na grid
+                const isMe = currentUser && currentUser.id === user.id;
+                const borderStyle = isMe ? 'border-color: var(--success);' : '';
+
+                const cardHTML = `
+                    <div class="card-container" style="${borderStyle}" onclick="abrirModal(${user.id})">
+                        <div class="grade-badge ${badgeClass}">${badgeText}</div>
+                        <img class="avatar" src="${user.avatar}" alt="${user.name}">
+                        <h3 class="name">${user.name} ${isMe ? '<span style="color:var(--success); font-size:0.7em">(Eu)</span>' : ''}</h3>
+                        <div class="role">${user.role}</div>
+                        <div class="short">Visualizar métricas de desempenho.</div>
+                        <div class="tags">
+                            <span class="tag">⏱ ${minToTime(totalMin)}</span>
+                            <span class="tag">📦 ${totalQtd}</span>
+                        </div>
+                    </div>
+                `;
+                grid.innerHTML += cardHTML;
+            });
+        }
+
+        // --- MODAL E LÓGICA DE PERMISSÕES ---
+        function abrirModal(userId) {
+            const user = usersDB.find(u => u.id === userId);
+            selectedUserForModal = user;
+
+            document.getElementById('modal-backdrop').classList.remove('hidden');
+            document.getElementById('modal-avatar').src = user.avatar;
+            document.getElementById('modal-name').innerText = user.name;
+            document.getElementById('modal-role').innerText = user.role.toUpperCase();
+
+            // MUDANÇA: Verificação de Permissão
+            const formContainer = document.getElementById('form-container');
+            const readOnlyMsg = document.getElementById('readonly-msg');
+            
+            // Pode editar se: É Admin OU É o dono do perfil
+            const canEdit = (currentUser.role === 'admin') || (currentUser.id === user.id);
+
+            if(canEdit) {
+                formContainer.classList.remove('hidden'); // Mostra form
+                readOnlyMsg.classList.add('hidden');      // Esconde aviso
+            } else {
+                formContainer.classList.add('hidden');    // Esconde form
+                readOnlyMsg.classList.remove('hidden');   // Mostra aviso
+            }
+
+            atualizarDadosModal(canEdit);
+        }
+
+        function fecharModal() {
+            document.getElementById('modal-backdrop').classList.add('hidden');
+            selectedUserForModal = null;
+            renderGrid();
+        }
+
+        function atualizarDadosModal(canEdit) {
+            if(!selectedUserForModal) return;
+            const userActs = activities.filter(a => a.userId === selectedUserForModal.id);
+            
+            // Totais
+            const totalQtd = userActs.reduce((acc, curr) => acc + curr.qtd, 0);
+            const totalMin = userActs.reduce((acc, curr) => acc + timeToMin(curr.time), 0);
+            document.getElementById('modal-total-hours').innerText = minToTime(totalMin);
+            document.getElementById('modal-total-qtd').innerText = totalQtd;
+
+            // Renderizar Lista
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            
+            [...userActs].reverse().forEach(act => {
+                const media = act.qtd > 0 ? Math.round(act.qtd / (timeToMin(act.time)/60)) : 0;
+                const li = document.createElement('li');
+                li.className = 'history-item';
+                
+                // Botão de deletar só aparece se puder editar
+                const deleteBtn = canEdit ? `<button class="delete-btn" onclick="deletarAtividade(${act.id})">×</button>` : '';
+
+                li.innerHTML = `
+                    <div>
+                        <strong>${act.desc}</strong>
+                        <span style="font-size:0.8em">${act.date}</span>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                        <div style="text-align:right">
+                            <strong style="color:var(--accent)">${act.qtd} un.</strong>
+                            <div style="font-size:0.8em">${act.time} (${media}/h)</div>
+                        </div>
+                        ${deleteBtn}
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function salvarAtividade() {
+            const desc = document.getElementById('input-desc').value;
+            const qtd = Number(document.getElementById('input-qtd').value);
+            const time = document.getElementById('input-time').value;
+
+            if(!desc || !qtd || !time) { alert("Preencha todos os campos"); return; }
+
+            const newAct = {
+                id: Date.now(),
+                userId: selectedUserForModal.id, // Salva para quem está no modal
+                desc, qtd, time,
+                date: new Date().toLocaleDateString('pt-BR')
+            };
+
+            activities.push(newAct);
+            localStorage.setItem('activities_db', JSON.stringify(activities));
+            
+            // Limpa form
+            document.getElementById('input-desc').value = '';
+            document.getElementById('input-qtd').value = '';
+            document.getElementById('input-time').value = '';
+
+            // Atualiza modal mantendo permissão true (pois acabou de adicionar)
+            atualizarDadosModal(true);
+        }
+
+        function deletarAtividade(actId) {
+            if(confirm("Deseja excluir este registro?")) {
+                activities = activities.filter(a => a.id !== actId);
+                localStorage.setItem('activities_db', JSON.stringify(activities));
+                atualizarDadosModal(true);
+            }
+        }
+    </script>
+</body>
+</html>
