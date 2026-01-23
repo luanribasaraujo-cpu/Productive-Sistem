@@ -63,6 +63,7 @@
         .tag-chip span { cursor: pointer; color: var(--danger); font-weight: bold; padding-left: 5px; }
         
         .history-tag { font-size: 0.7rem; background: var(--accent); color: #000; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-weight: bold; }
+        .feedback-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-weight: bold; border: 1px solid var(--muted); color: var(--muted); }
     </style>
 </head>
 <body>
@@ -82,6 +83,14 @@
     <div id="main-app" class="hidden">
         <div class="top-nav">
             <div style="font-weight: bold;">Dashboard Pro</div>
+            
+            <select id="filter-period" onchange="renderGrid()" style="width: auto; margin: 0 15px; background: var(--bg); color: white; border: 1px solid var(--border); padding: 5px 10px; border-radius: 6px; cursor: pointer;">
+                <option value="today">📅 Hoje</option>
+                <option value="week">📅 Esta Semana</option>
+                <option value="month">📅 Este Mês</option>
+                <option value="all" selected>📅 Todo o Período</option>
+            </select>
+
             <div>
                 <button id="btn-manage-tags" class="nav-btn-secondary hidden" onclick="toggleTagModal()">⚙️ Tags</button>
                 <button class="nav-btn-secondary" onclick="abrirModalPerfil()">👤 Meu Perfil</button>
@@ -125,11 +134,15 @@
                             </div>
                         </div>
 
-                        <select id="input-tag-select">
-                            <option value="" disabled selected>-- Selecione a Atividade --</option>
-                        </select>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <select id="input-tag-select" style="flex: 1; margin-bottom: 0;">
+                                <option value="" disabled selected>-- Selecione a Atividade --</option>
+                            </select>
+                            
+                            <input type="text" id="input-feedback" placeholder="Feedback / Obs..." style="flex: 1; margin-bottom: 0; border: 1px solid var(--accent);">
+                        </div>
 
-                        <input type="text" id="input-desc" placeholder="Descrição (Opcional)">
+                        <input type="text" id="input-desc" placeholder="Descrição Detalhada (Opcional)">
                         
                         <div style="display: flex; gap: 10px;">
                             <input type="number" id="input-qtd" placeholder="Qtd. Validação">
@@ -228,13 +241,45 @@
             return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         }
 
+        function isDateInPeriod(dateStr, period) {
+            if (period === 'all') return true;
+            const parts = dateStr.split('/'); 
+            const actDate = new Date(parts[2], parts[1]-1, parts[0]);
+            actDate.setHours(0,0,0,0);
+
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
+            if (period === 'today') return actDate.getTime() === today.getTime();
+
+            if (period === 'week') {
+                const dayOfWeek = today.getDay(); 
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - dayOfWeek);
+                startOfWeek.setHours(0,0,0,0);
+                return actDate >= startOfWeek;
+            }
+
+            if (period === 'month') {
+                return actDate.getMonth() === today.getMonth() && 
+                       actDate.getFullYear() === today.getFullYear();
+            }
+            return true;
+        }
+
         // --- GRID ---
         function renderGrid() {
             const grid = document.getElementById('users-grid');
+            const filterPeriod = document.getElementById('filter-period').value; 
             grid.innerHTML = '';
+            
             usersDB.forEach(user => {
                 if (user.role === 'admin' && currentUser.role !== 'admin') return;
-                const userActs = activities.filter(a => a.userId === user.id);
+                
+                const userActs = activities.filter(a => {
+                    return a.userId === user.id && isDateInPeriod(a.date, filterPeriod);
+                });
+
                 const totalQtd = userActs.reduce((acc, c) => acc + c.qtd, 0);
                 const totalMin = userActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
                 
@@ -299,27 +344,23 @@
             [...userActs].reverse().forEach(act => {
                 const btnDel = canEdit ? `<button onclick="delAct(${act.id})" style="background:none;border:none;color:#666;cursor:pointer;">✖</button>` : '';
                 
-                // --- CÁLCULO DA MÉDIA SEM SEGUNDOS ---
                 let rate = 0;
-                
-                // Quebra o tempo: HH:MM:SS
                 const parts = act.time.split(':').map(Number);
                 const h = parts[0] || 0;
                 const m = parts[1] || 0;
-                
-                // Lógica solicitada: ignorar os segundos na matemática de produtividade
-                // Se trabalhou 1h 30min -> 1.5 horas
                 const totalHours = h + (m/60);
-                
-                if (totalHours > 0) {
-                    // Arredonda para número inteiro (exato)
-                    rate = Math.round(act.qtd / totalHours);
-                }
+                if (totalHours > 0) rate = Math.round(act.qtd / totalHours);
+
+                // [NOVO] Renderização do Feedback em Texto
+                const fb = act.feedback || "-";
 
                 list.innerHTML += `
                     <li style="background:rgba(255,255,255,0.05); padding:10px; margin-bottom:5px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <span class="history-tag">${act.tag || 'Geral'}</span>
+                            <div style="margin-bottom:4px;">
+                                <span class="history-tag">${act.tag || 'Geral'}</span>
+                                <span class="feedback-badge">${fb}</span>
+                            </div>
                             <span style="font-size:0.9rem">${act.desc || ''}</span>
                             <div style="font-size:0.75rem; color:#888;">${act.date}</div>
                         </div>
@@ -327,7 +368,7 @@
                             <strong style="color:var(--accent)">${act.qtd} un.</strong>
                             <div style="font-size:0.9rem; font-weight:bold;">⏱ ${act.time}</div>
                             <div style="font-size:0.8rem; color:#38bdf8;">(${rate} /h)</div>
-                            <div style="font-size:0.7rem; color:#888;">🛑 Parou às: ${act.stopTime}</div>
+                            <div style="font-size:0.7rem; color:#888;">🛑 ${act.stopTime}</div>
                             ${btnDel}
                         </div>
                     </li>
@@ -338,6 +379,7 @@
         // --- SALVAR ATIVIDADE ---
         function salvarAtividade() {
             let tag = document.getElementById('input-tag-select').value;
+            let feedback = document.getElementById('input-feedback').value; // Captura texto
             let desc = document.getElementById('input-desc').value;
             let qtd = document.getElementById('input-qtd').value;
             let manualTime = document.getElementById('input-time').value;
@@ -359,21 +401,26 @@
 
             if (!tag) tag = "Geral";
             if (!desc) desc = "";
+            if (!feedback) feedback = ""; // Se vazio, salva vazio
             if (!qtd) qtd = 0; else qtd = Number(qtd);
 
             activities.push({
                 id: Date.now(),
                 userId: selectedUserForModal.id,
-                tag, desc, qtd, 
+                tag, 
+                feedback, // Salva o texto livre
+                desc, qtd, 
                 time: finalDuration,      
                 stopTime: finalStopTime,  
                 date: new Date().toLocaleDateString('pt-BR')
             });
             localStorage.setItem('activities_db_v2', JSON.stringify(activities));
             
+            // Limpa campos
             document.getElementById('input-desc').value = '';
             document.getElementById('input-qtd').value = '';
             document.getElementById('input-time').value = '';
+            document.getElementById('input-feedback').value = ''; // Limpa o feedback
             
             resetTimer(); 
             atualizarDadosModal(true);
