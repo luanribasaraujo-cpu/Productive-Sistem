@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Produção Pro</title>
+    <title>Sistema de Produção - Checklists</title>
     <style>
         /* --- ESTILOS GERAIS --- */
         :root {
             --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8;
             --accent: #38bdf8; --danger: #ef4444; --success: #10b981;
-            --warning: #f59e0b; --border: rgba(255, 255, 255, 0.1);
+            --border: rgba(255, 255, 255, 0.1);
         }
         body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; min-height: 100vh; }
         .hidden { display: none !important; }
@@ -22,87 +22,64 @@
         /* Cards */
         .card-container { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; position: relative; transition: transform 0.2s; cursor: pointer; }
         .card-container:hover { transform: translateY(-5px); border-color: var(--accent); }
-        .grade-badge { position: absolute; top: 12px; right: 12px; font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; z-index: 2; }
-        .grade-special { background: #ef4444; color: white; } .grade-user { background: #059669; color: white; }
         .avatar { width: 100%; height: 220px; border-radius: 8px; object-fit: cover; background: #111; margin-bottom: 12px; opacity: 0.9; }
         .tags { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
-        .tag { font-size: 11px; padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid var(--border); }
+        .tag { font-size: 12px; padding: 6px 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid var(--border); }
+
+        /* Botões */
+        .nav-btn-secondary { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .nav-btn-secondary:hover { background: var(--accent); color: var(--bg); }
+        button.action-btn { background: var(--accent); color: #000; font-weight: bold; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; width: 100%; transition: 0.2s; margin-top: 10px; }
 
         /* Modal */
         .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(5px); padding: 20px; }
         .modal { width: min(850px, 100%); background: var(--card); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
         .modal-content { display: flex; gap: 32px; padding: 32px; }
+        @media(max-width: 768px){ .modal-content {flex-direction: column;} .thumb {width: 100%; height: 200px;} }
         .thumb { width: 280px; height: 350px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
         .close { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.1); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; }
         .close:hover { background: var(--danger); }
         .right-panel { flex: 1; width: 100%; }
 
         /* Inputs & Form */
-        .input-group { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); border-left: 3px solid var(--success); }
-        input, select { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-        button.action-btn { background: var(--accent); color: #000; font-weight: bold; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; transition: 0.2s; }
-        
-        /* Login Screen */
-        #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 999; display: flex; justify-content: center; align-items: center; }
-        .login-box { background: var(--card); padding: 40px; border-radius: 16px; width: 100%; max-width: 400px; border: 1px solid var(--border); text-align: center; }
-
-        /* Timer Styles */
-        .timer-wrapper { display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--accent); }
-        .timer-display { font-family: monospace; font-size: 1.5rem; color: var(--accent); font-weight: bold; }
-        .timer-controls button { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.8rem; margin-left: 5px; }
-        .btn-play { background: var(--success); color: #000; }
-        .btn-pause { background: var(--warning); color: #000; }
-        .btn-stop { background: var(--danger); color: white; }
-
-        /* Navbar Buttons & Tags */
-        .nav-btn-secondary { background: transparent; border: 1px solid var(--muted); color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; margin-right: 10px; font-size: 0.9rem; transition: 0.2s; }
-        .nav-btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
-        
-        .tag-modal-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
-        .tag-chip { background: var(--bg); border: 1px solid var(--accent); padding: 4px 10px; border-radius: 15px; font-size: 0.85rem; display: flex; align-items: center; gap: 5px; }
-        .tag-chip span { cursor: pointer; color: var(--danger); font-weight: bold; padding-left: 5px; }
-        
-        .history-tag { font-size: 0.7rem; background: var(--accent); color: #000; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-weight: bold; }
-        .feedback-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-weight: bold; border: 1px solid var(--muted); color: var(--muted); }
+        .input-group { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); border-left: 4px solid var(--accent); }
+        input { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="login-screen">
-        <div class="login-box">
-            <h2 style="color: white; margin-bottom: 20px;">Portal da Equipe</h2>
-            <input type="text" id="username" placeholder="Usuário">
-            <input type="password" id="password" placeholder="Senha">
-            <button class="action-btn" onclick="fazerLogin()">Entrar</button>
-            <p style="color: var(--muted); font-size: 0.8rem; margin-top: 20px;">
-                Admin: <b>admin/admin</b> | User: <b>user1/1234</b>
-            </p>
-        </div>
+    <div class="top-nav">
+        <div style="font-weight: bold; font-size: 1.2rem;">Dashboard de Produção</div>
+        <button class="nav-btn-secondary" onclick="abrirAdmin()">⚙️ Gerenciar Equipe</button>
     </div>
 
-    <div id="main-app" class="hidden">
-        <div class="top-nav">
-            <div style="font-weight: bold;">Dashboard Pro</div>
-            
-            <select id="filter-period" onchange="renderGrid()" style="width: auto; margin: 0 15px; background: var(--bg); color: white; border: 1px solid var(--border); padding: 5px 10px; border-radius: 6px; cursor: pointer;">
-                <option value="today">📅 Hoje</option>
-                <option value="week">📅 Esta Semana</option>
-                <option value="month">📅 Este Mês</option>
-                <option value="all" selected>📅 Todo o Período</option>
-            </select>
+    <main>
+        <div class="grid" id="users-grid"></div>
+    </main>
 
-            <div>
-                <button id="btn-manage-tags" class="nav-btn-secondary hidden" onclick="toggleTagModal()">⚙️ Tags</button>
-                <button class="nav-btn-secondary" onclick="abrirModalPerfil()">👤 Meu Perfil</button>
-                <span id="welcome-msg" style="color: var(--muted); margin-right: 15px; font-size: 0.9rem;"></span>
-                <button onclick="logout()" style="background:none; border:1px solid var(--danger); color:var(--danger); padding:6px 12px; border-radius:6px; cursor:pointer;">Sair</button>
+    <div id="modal-admin" class="modal-backdrop hidden" style="z-index: 200;">
+        <div class="modal" style="width: 450px;">
+            <div style="padding: 30px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                    <h2 style="margin:0; color: var(--accent);">⚙️ Gerenciar Equipe</h2>
+                    <button onclick="fecharAdmin()" style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">×</button>
+                </div>
+                
+                <div class="input-group" style="border-left-color: var(--success);">
+                    <label style="color:var(--muted); font-size:0.8rem">Novo Integrante</label>
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <div style="flex: 1;">
+                            <input type="text" id="new-user-name" placeholder="Nome do integrante" style="margin:0;">
+                        </div>
+                        <button class="action-btn" style="width: auto; margin:0; background: var(--success);" onclick="addUser()">Adicionar</button>
+                    </div>
+                </div>
+
+                <h4 style="color: var(--muted); border-bottom:1px solid var(--border); padding-bottom:5px;">Membros Ativos</h4>
+                <div id="admin-users-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 300px; overflow-y: auto;">
+                    </div>
             </div>
         </div>
-
-        <main>
-            <div class="grid" id="users-grid">
-                </div>
-        </main>
     </div>
 
     <div id="modal-backdrop" class="modal-backdrop hidden">
@@ -112,123 +89,176 @@
                 <img src="" id="modal-avatar" class="thumb">
                 
                 <div class="right-panel">
-                    <h2 id="modal-name">Nome</h2>
-                    <p id="modal-role" style="color: var(--accent); font-size: 0.8rem; text-transform: uppercase;">CARGO</p>
+                    <h2 id="modal-name" style="margin-top: 0;">Nome</h2>
                     
-                    <div style="display: flex; gap: 15px; margin-bottom: 20px;">
-                        <div class="tag" style="font-size: 14px; padding: 8px 12px;">Horas: <strong id="modal-total-hours" style="color:white">00:00</strong></div>
-                        <div class="tag" style="font-size: 14px; padding: 8px 12px;">Validações: <strong id="modal-total-qtd" style="color:white">0</strong></div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div class="tag">Horas Locais: <strong id="modal-total-hours" style="color:white">00:00</strong></div>
+                        <div class="tag">Apontamentos Locais: <strong id="modal-total-qtd" style="color:white">0</strong></div>
+                        <div class="tag" style="border-color: var(--accent); background: rgba(56, 189, 248, 0.1);">
+                            Checklists Planilha: <strong id="modal-api-qtd" style="color:var(--accent)">Carregando...</strong>
+                        </div>
                     </div>
 
-                    <div id="readonly-msg" class="hidden" style="color: var(--danger); border: 1px dashed var(--danger); padding: 10px; text-align: center; border-radius: 6px; margin-bottom: 20px;">
-                        🔒 Apenas visualização
-                    </div>
-
-                    <div id="form-container" class="input-group hidden">
-                        <div class="timer-wrapper">
-                            <div id="timer-display" class="timer-display">00:00:00</div>
-                            <div class="timer-controls">
-                                <button id="btn-start" class="btn-play" onclick="startTimer()">▶</button>
-                                <button id="btn-pause" class="btn-pause hidden" onclick="pauseTimer()">⏸</button>
-                                <button id="btn-stop" class="btn-stop hidden" onclick="stopTimer()">⏹</button>
+                    <div id="form-container" class="input-group">
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <div style="flex: 1;">
+                                <label style="color:var(--muted); font-size:0.8rem">Checklists (Puxado da Planilha)</label>
+                                <input type="number" id="input-qtd" readonly style="background: rgba(255,255,255,0.05); color: var(--accent); font-weight: bold;" value="0">
+                            </div>
+                            <div style="flex: 1;">
+                                <label style="color:var(--muted); font-size:0.8rem">Tempo Utilizado</label>
+                                <input type="time" id="input-time" oninput="calcularMedia()" required>
                             </div>
                         </div>
-
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <select id="input-tag-select" style="flex: 1; margin-bottom: 0;">
-                                <option value="" disabled selected>-- Selecione a Atividade --</option>
-                            </select>
-                            
-                            <input type="text" id="input-feedback" placeholder="Feedback / Obs..." style="flex: 1; margin-bottom: 0; border: 1px solid var(--accent);">
-                        </div>
-
-                        <input type="text" id="input-desc" placeholder="Descrição Detalhada (Opcional)">
                         
-                        <div style="display: flex; gap: 10px;">
-                            <input type="number" id="input-qtd" placeholder="Qtd. Validação">
-                            <input type="time" id="input-time" title="Para maior precisão, use o cronômetro">
+                        <div style="text-align: center; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; border: 1px solid var(--border);">
+                            Média desta sessão: <br>
+                            <strong id="calc-projecao" style="color: var(--accent); font-size: 1.5rem;">0.00 /h</strong>
                         </div>
-                        <button class="action-btn" onclick="salvarAtividade()">Registrar</button>
+
+                        <button class="action-btn" onclick="salvarAtividade()">Registrar Apontamento</button>
                     </div>
 
-                    <h4 style="color: var(--muted); border-bottom:1px solid var(--border); padding-bottom:5px;">Histórico</h4>
-                    <ul id="history-list" style="list-style: none; padding: 0; max-height: 250px; overflow-y: auto;"></ul>
+                    <h4 style="color: var(--muted); border-bottom:1px solid var(--border); padding-bottom:5px;">Histórico Local</h4>
+                    <ul id="history-list" style="list-style: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-tags" class="modal-backdrop hidden" style="z-index: 200;">
-        <div class="modal" style="width: 400px; height: auto;">
-            <div style="padding: 20px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3>Gerenciar Tags</h3>
-                    <button onclick="toggleTagModal()" style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">×</button>
-                </div>
-                <div style="display: flex; gap: 5px; margin-top: 10px;">
-                    <input type="text" id="new-tag-input" placeholder="Nova tag..." style="margin:0;">
-                    <button onclick="addTag()" style="background: var(--success); border:none; border-radius:6px; cursor:pointer;">+</button>
-                </div>
-                <div id="tags-list-container" class="tag-modal-list"></div>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-profile" class="modal-backdrop hidden" style="z-index: 210;">
-        <div class="modal" style="width: 400px; height: auto;">
-            <div style="padding: 30px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                    <h3>Editar Perfil</h3>
-                    <button onclick="fecharModalPerfil()" style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">×</button>
-                </div>
-                <label style="color:var(--muted); font-size:0.8rem">Nome de Exibição</label>
-                <input type="text" id="edit-name">
-                <label style="color:var(--muted); font-size:0.8rem">Nova Senha</label>
-                <input type="text" id="edit-pass" placeholder="Digite para alterar...">
-                <button class="action-btn" onclick="salvarPerfil()">Salvar Alterações</button>
             </div>
         </div>
     </div>
 
     <script>
+        // ==========================================
+        // 🔗 COLOQUE AQUI O SEU LINK DO GOOGLE APPS SCRIPT
+        // ==========================================
+        const URL_API = "SUA_URL_DO_APPS_SCRIPT_AQUI"; 
+
         // --- DADOS INICIAIS ---
-        const defaultUsers = [
-            { id: 1, user: "admin", pass: "admin", name: "Administrador", role: "admin", avatar: "https://ui-avatars.com/api/?name=Admin&background=ef4444&color=fff" },
-            { id: 2, user: "user1", pass: "1234", name: "Luan", role: "operador", avatar: "https://ui-avatars.com/api/?name=Luan&background=ef4444&color=fff" },
-            { id: 3, user: "user2", pass: "1234", name: "Rapha", role: "operador", avatar: "https://ui-avatars.com/api/?name=Rapha&background=ef4444&color=fff" }
+        let usersDB = JSON.parse(localStorage.getItem('users_db_v6')) || [
+            { id: 1, name: "Luan", avatar: "https://ui-avatars.com/api/?name=Luan&background=38bdf8&color=fff" },
+            { id: 2, name: "Rapha", avatar: "https://ui-avatars.com/api/?name=Rapha&background=38bdf8&color=fff" }
         ];
 
-        let usersDB = JSON.parse(localStorage.getItem('users_db')) || defaultUsers;
-        let currentUser = null;
         let selectedUserForModal = null;
-        let activities = JSON.parse(localStorage.getItem('activities_db_v2')) || [];
-        let availableTags = JSON.parse(localStorage.getItem('tags_db')) || ["Inspeção Manual", "Validação Area Marker", "Revisao", "Daily"];
-        
-        let recordedPauseTime = null; 
+        let activities = JSON.parse(localStorage.getItem('activities_db_v5')) || [];
 
-        // --- LOGIN ---
-        function fazerLogin() {
-            const u = document.getElementById('username').value;
-            const p = document.getElementById('password').value;
-            const found = usersDB.find(user => user.user === u && user.pass === p);
-            if (found) {
-                currentUser = found;
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('main-app').classList.remove('hidden');
-                document.getElementById('welcome-msg').innerText = `${currentUser.name}`;
-                if(currentUser.role === 'admin') document.getElementById('btn-manage-tags').classList.remove('hidden');
-                renderGrid();
-            } else { alert("Login inválido."); }
+        window.onload = () => renderGrid();
+
+        // ==========================================
+        // PAINEL ADMIN (GERENCIAR USUÁRIOS)
+        // ==========================================
+        function abrirAdmin() {
+            document.getElementById('modal-admin').classList.remove('hidden');
+            renderAdminUsers();
         }
-        function logout() { location.reload(); }
 
-        // --- UTILITÁRIOS ---
+        function fecharAdmin() {
+            document.getElementById('modal-admin').classList.add('hidden');
+        }
+
+        function renderAdminUsers() {
+            const list = document.getElementById('admin-users-list');
+            list.innerHTML = '';
+            usersDB.forEach(u => {
+                list.innerHTML += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <img src="${u.avatar}" style="width: 30px; height: 30px; border-radius: 50%;">
+                            <span style="font-weight: bold;">${u.name}</span>
+                        </div>
+                        <button onclick="deleteUser(${u.id})" style="background:none; border:none; color: var(--danger); cursor:pointer; font-weight: bold; font-size: 0.9rem;">Remover</button>
+                    </div>
+                `;
+            });
+        }
+
+        function addUser() {
+            const nameInput = document.getElementById('new-user-name');
+            const name = nameInput.value.trim();
+            if (!name) return alert('Por favor, digite um nome!');
+            
+            const newId = Date.now();
+            // Gera um avatar automático bonito com a letra do nome
+            const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=38bdf8&color=fff`;
+            
+            usersDB.push({ id: newId, name: name, avatar: avatar });
+            localStorage.setItem('users_db_v6', JSON.stringify(usersDB));
+            
+            nameInput.value = '';
+            renderAdminUsers();
+            renderGrid();
+        }
+
+        function deleteUser(id) {
+            if(confirm("Tem certeza que deseja remover este usuário?")) {
+                usersDB = usersDB.filter(u => u.id !== id);
+                localStorage.setItem('users_db_v6', JSON.stringify(usersDB));
+                renderAdminUsers();
+                renderGrid();
+            }
+        }
+
+        // ==========================================
+        // INTEGRAÇÃO COM API (GOOGLE SHEETS)
+        // ==========================================
+        async function buscarCheckboxes(nomeUsuario) {
+            const inputQtd = document.getElementById('input-qtd');
+            const displayApi = document.getElementById('modal-api-qtd');
+            
+            inputQtd.value = "⏳";
+            displayApi.innerText = "Buscando...";
+            
+            if (URL_API === "SUA_URL_DO_APPS_SCRIPT_AQUI") {
+                inputQtd.value = "0";
+                displayApi.innerText = "Link não configurado";
+                return;
+            }
+
+            try {
+                const response = await fetch(URL_API);
+                const dados = await response.json();
+                const dadosUsuario = dados.find(d => d.nome === nomeUsuario);
+                
+                if (dadosUsuario) {
+                    inputQtd.value = dadosUsuario.checklistsConcluidos;
+                    displayApi.innerText = dadosUsuario.checklistsConcluidos;
+                } else {
+                    inputQtd.value = "0";
+                    displayApi.innerText = "0";
+                }
+            } catch (error) {
+                inputQtd.value = "0";
+                displayApi.innerText = "Erro de conexão";
+                console.error("Erro ao puxar dados da API:", error);
+            }
+            
+            calcularMedia();
+        }
+
+        async function enviarDadosAPI(nome, producao, tempoHorasDecimais) {
+            if (URL_API === "SUA_URL_DO_APPS_SCRIPT_AQUI") return;
+            try {
+                await fetch(URL_API, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nome: nome,
+                        producao: producao,
+                        tempo: tempoHorasDecimais
+                    })
+                });
+            } catch (error) {
+                console.error("Erro ao enviar para API:", error);
+            }
+        }
+
+        // ==========================================
+        // UTILITÁRIOS
+        // ==========================================
         function timeToMin(t) { 
             if(!t) return 0; 
             const parts = t.split(':').map(Number);
-            const h = parts[0] || 0;
-            const m = parts[1] || 0;
-            return (h * 60) + m; 
+            return (parts[0] * 60) + parts[1]; 
         }
         
         function minToTime(m) { 
@@ -236,309 +266,133 @@
             const mn = m % 60; 
             return `${String(h).padStart(2,'0')}h ${String(mn).padStart(2,'0')}m`; 
         }
-        
-        function getCurrentTime() {
-            return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        }
 
-        function isDateInPeriod(dateStr, period) {
-            if (period === 'all') return true;
-            const parts = dateStr.split('/'); 
-            const actDate = new Date(parts[2], parts[1]-1, parts[0]);
-            actDate.setHours(0,0,0,0);
-
-            const today = new Date();
-            today.setHours(0,0,0,0);
-
-            if (period === 'today') return actDate.getTime() === today.getTime();
-
-            if (period === 'week') {
-                const dayOfWeek = today.getDay(); 
-                const startOfWeek = new Date(today);
-                startOfWeek.setDate(today.getDate() - dayOfWeek);
-                startOfWeek.setHours(0,0,0,0);
-                return actDate >= startOfWeek;
-            }
-
-            if (period === 'month') {
-                return actDate.getMonth() === today.getMonth() && 
-                       actDate.getFullYear() === today.getFullYear();
-            }
-            return true;
-        }
-
-        // --- GRID ---
+        // ==========================================
+        // GRID PRINCIPAL E MODAL
+        // ==========================================
         function renderGrid() {
             const grid = document.getElementById('users-grid');
-            const filterPeriod = document.getElementById('filter-period').value; 
             grid.innerHTML = '';
             
             usersDB.forEach(user => {
-                if (user.role === 'admin' && currentUser.role !== 'admin') return;
-                
-                const userActs = activities.filter(a => {
-                    return a.userId === user.id && isDateInPeriod(a.date, filterPeriod);
-                });
-
+                // Como tiramos o filtro de data, ele agora carrega todos os registros do histórico local desse usuário
+                const userActs = activities.filter(a => a.userId === user.id);
                 const totalQtd = userActs.reduce((acc, c) => acc + c.qtd, 0);
                 const totalMin = userActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
-                
-                let badgeClass = user.role === 'admin' ? 'grade-special' : 'grade-user';
-                let borderStyle = (currentUser && currentUser.id === user.id) ? 'border: 1px solid var(--success);' : '';
 
                 grid.innerHTML += `
-                    <div class="card-container" style="${borderStyle}" onclick="abrirModal(${user.id})">
-                        <div class="grade-badge ${badgeClass}">${user.role}</div>
+                    <div class="card-container" onclick="abrirModal(${user.id})">
                         <img class="avatar" src="${user.avatar}">
-                        <h3 class="name" style="margin:0">${user.name}</h3>
+                        <h3 style="margin:0">${user.name}</h3>
                         <div class="tags">
-                            <span class="tag">⏱ ${minToTime(totalMin)}</span>
-                            <span class="tag">📦 ${totalQtd}</span>
+                            <span class="tag">⏱ ${minToTime(totalMin)} local</span>
+                            <span class="tag">📦 ${totalQtd} local</span>
                         </div>
                     </div>
                 `;
             });
         }
 
-        // --- MODAL ---
         function abrirModal(userId) {
             const user = usersDB.find(u => u.id === userId);
             selectedUserForModal = user;
+            
             document.getElementById('modal-backdrop').classList.remove('hidden');
             document.getElementById('modal-avatar').src = user.avatar;
             document.getElementById('modal-name').innerText = user.name;
-            document.getElementById('modal-role').innerText = user.role.toUpperCase();
-
-            const canEdit = (currentUser.role === 'admin') || (currentUser.id === user.id);
-            const form = document.getElementById('form-container');
-            const msg = document.getElementById('readonly-msg');
-
-            if(canEdit) {
-                form.classList.remove('hidden');
-                msg.classList.add('hidden');
-                updateTagSelect(); 
-                resetTimer(); 
-            } else {
-                form.classList.add('hidden');
-                msg.classList.remove('hidden');
-            }
-            atualizarDadosModal(canEdit);
+            
+            document.getElementById('input-time').value = '';
+            document.getElementById('calc-projecao').innerText = '0.00 /h';
+            
+            atualizarHistorico();
+            buscarCheckboxes(user.name);
         }
 
         function fecharModal() {
             document.getElementById('modal-backdrop').classList.add('hidden');
-            stopTimer(); 
             renderGrid();
         }
 
-        function atualizarDadosModal(canEdit) {
-            const userActs = activities.filter(a => a.userId === selectedUserForModal.id);
-            const totalQtd = userActs.reduce((acc, c) => acc + c.qtd, 0);
-            const totalMin = userActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
+        // ==========================================
+        // CÁLCULO E REGISTRO
+        // ==========================================
+        function calcularMedia() {
+            const tempoStr = document.getElementById('input-time').value;
+            const qtd = Number(document.getElementById('input-qtd').value) || 0;
+            let media = 0;
             
-            document.getElementById('modal-total-hours').innerText = minToTime(totalMin);
-            document.getElementById('modal-total-qtd').innerText = totalQtd;
+            if(tempoStr) {
+                const parts = tempoStr.split(':').map(Number);
+                const horasDecimais = parts[0] + (parts[1] / 60);
+                if (horasDecimais > 0) {
+                    media = (qtd / horasDecimais).toFixed(2);
+                }
+            }
+            document.getElementById('calc-projecao').innerText = `${media} /h`;
+        }
+
+        function atualizarHistorico() {
+            const userActs = activities.filter(a => a.userId === selectedUserForModal.id);
+            
+            document.getElementById('modal-total-hours').innerText = minToTime(userActs.reduce((acc, c) => acc + timeToMin(c.time), 0));
+            document.getElementById('modal-total-qtd').innerText = userActs.reduce((acc, c) => acc + c.qtd, 0);
 
             const list = document.getElementById('history-list');
             list.innerHTML = '';
             [...userActs].reverse().forEach(act => {
-                const btnDel = canEdit ? `<button onclick="delAct(${act.id})" style="background:none;border:none;color:#666;cursor:pointer;">✖</button>` : '';
-                
-                let rate = 0;
                 const parts = act.time.split(':').map(Number);
-                const h = parts[0] || 0;
-                const m = parts[1] || 0;
-                const totalHours = h + (m/60);
-                if (totalHours > 0) rate = Math.round(act.qtd / totalHours);
-
-                // [NOVO] Renderização do Feedback em Texto
-                const fb = act.feedback || "-";
-
+                const horas = parts[0] + (parts[1] / 60);
+                const rate = horas > 0 ? (act.qtd / horas).toFixed(1) : 0;
+                
                 list.innerHTML += `
                     <li style="background:rgba(255,255,255,0.05); padding:10px; margin-bottom:5px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <div style="margin-bottom:4px;">
-                                <span class="history-tag">${act.tag || 'Geral'}</span>
-                                <span class="feedback-badge">${fb}</span>
+                        <div style="font-size:0.75rem; color:#888;">${act.date}</div>
+                        <div style="text-align:right; display:flex; align-items:center; gap:10px;">
+                            <div>
+                                <strong style="color:var(--accent)">${act.qtd} un.</strong>
+                                <div style="font-size:0.85rem;">⏱ ${act.time}</div>
+                                <div style="font-size:0.75rem; color:var(--muted);">(${rate} /h)</div>
                             </div>
-                            <span style="font-size:0.9rem">${act.desc || ''}</span>
-                            <div style="font-size:0.75rem; color:#888;">${act.date}</div>
-                        </div>
-                        <div style="text-align:right">
-                            <strong style="color:var(--accent)">${act.qtd} un.</strong>
-                            <div style="font-size:0.9rem; font-weight:bold;">⏱ ${act.time}</div>
-                            <div style="font-size:0.8rem; color:#38bdf8;">(${rate} /h)</div>
-                            <div style="font-size:0.7rem; color:#888;">🛑 ${act.stopTime}</div>
-                            ${btnDel}
+                            <button onclick="delAct(${act.id})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;">&times;</button>
                         </div>
                     </li>
                 `;
             });
         }
 
-        // --- SALVAR ATIVIDADE ---
         function salvarAtividade() {
-            let tag = document.getElementById('input-tag-select').value;
-            let feedback = document.getElementById('input-feedback').value; // Captura texto
-            let desc = document.getElementById('input-desc').value;
-            let qtd = document.getElementById('input-qtd').value;
-            let manualTime = document.getElementById('input-time').value;
+            let tempo = document.getElementById('input-time').value;
+            let qtd = Number(document.getElementById('input-qtd').value);
 
-            let finalDuration = "00:00:00";
-            
-            if (seconds > 0) {
-                const h = Math.floor(seconds / 3600);
-                const m = Math.floor((seconds % 3600) / 60);
-                const s = seconds % 60;
-                const fmt = (n) => String(n).padStart(2,'0');
-                finalDuration = `${fmt(h)}:${fmt(m)}:${fmt(s)}`;
-            } else if (manualTime) {
-                finalDuration = manualTime;
-                if(finalDuration.length === 5) finalDuration += ":00";
+            if (!tempo) {
+                alert("Por favor, preencha o Tempo Utilizado!");
+                return;
             }
 
-            let finalStopTime = recordedPauseTime ? recordedPauseTime : getCurrentTime();
-
-            if (!tag) tag = "Geral";
-            if (!desc) desc = "";
-            if (!feedback) feedback = ""; // Se vazio, salva vazio
-            if (!qtd) qtd = 0; else qtd = Number(qtd);
+            const parts = tempo.split(':').map(Number);
+            const horasDecimais = parts[0] + (parts[1] / 60);
 
             activities.push({
                 id: Date.now(),
                 userId: selectedUserForModal.id,
-                tag, 
-                feedback, // Salva o texto livre
-                desc, qtd, 
-                time: finalDuration,      
-                stopTime: finalStopTime,  
+                qtd: qtd, 
+                time: tempo,      
                 date: new Date().toLocaleDateString('pt-BR')
             });
-            localStorage.setItem('activities_db_v2', JSON.stringify(activities));
+            localStorage.setItem('activities_db_v5', JSON.stringify(activities));
             
-            // Limpa campos
-            document.getElementById('input-desc').value = '';
-            document.getElementById('input-qtd').value = '';
+            enviarDadosAPI(selectedUserForModal.name, qtd, horasDecimais.toFixed(2));
+
             document.getElementById('input-time').value = '';
-            document.getElementById('input-feedback').value = ''; // Limpa o feedback
-            
-            resetTimer(); 
-            atualizarDadosModal(true);
+            document.getElementById('calc-projecao').innerText = '0.00 /h';
+            atualizarHistorico();
         }
 
         function delAct(id) {
-            if(confirm("Apagar?")) {
+            if(confirm("Deseja realmente apagar este registro do histórico local?")) {
                 activities = activities.filter(a => a.id !== id);
-                localStorage.setItem('activities_db_v2', JSON.stringify(activities));
-                atualizarDadosModal(true);
-            }
-        }
-
-        // --- TIMER ---
-        let timerInt = null;
-        let seconds = 0;
-        let isRunning = false;
-
-        function updateTimerUI() {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            const s = seconds % 60;
-            const fmt = (n) => String(n).padStart(2,'0');
-            document.getElementById('timer-display').innerText = `${fmt(h)}:${fmt(m)}:${fmt(s)}`;
-        }
-
-        function startTimer() {
-            if(isRunning) return;
-            isRunning = true;
-            recordedPauseTime = null; 
-            document.getElementById('btn-start').classList.add('hidden');
-            document.getElementById('btn-pause').classList.remove('hidden');
-            document.getElementById('btn-stop').classList.remove('hidden');
-            timerInt = setInterval(() => { seconds++; updateTimerUI(); }, 1000);
-        }
-
-        function pauseTimer() {
-            isRunning = false;
-            clearInterval(timerInt);
-            recordedPauseTime = getCurrentTime(); 
-            document.getElementById('btn-start').classList.remove('hidden');
-            document.getElementById('btn-pause').classList.add('hidden');
-        }
-
-        function stopTimer() {
-            pauseTimer(); 
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            document.getElementById('input-time').value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-        }
-
-        function resetTimer() {
-            isRunning = false;
-            clearInterval(timerInt);
-            seconds = 0;
-            recordedPauseTime = null;
-            updateTimerUI();
-            document.getElementById('btn-start').classList.remove('hidden');
-            document.getElementById('btn-pause').classList.add('hidden');
-            document.getElementById('btn-stop').classList.add('hidden');
-        }
-
-        // --- TAGS ---
-        function updateTagSelect() {
-            const sel = document.getElementById('input-tag-select');
-            sel.innerHTML = '<option value="" disabled selected>-- Selecione a Atividade --</option>';
-            availableTags.forEach(t => sel.innerHTML += `<option value="${t}">${t}</option>`);
-        }
-        function toggleTagModal() {
-            const el = document.getElementById('modal-tags');
-            if(el.classList.contains('hidden')) { el.classList.remove('hidden'); renderAdminTags(); } 
-            else { el.classList.add('hidden'); updateTagSelect(); }
-        }
-        function renderAdminTags() {
-            const container = document.getElementById('tags-list-container');
-            container.innerHTML = '';
-            availableTags.forEach(t => {
-                container.innerHTML += `<div class="tag-chip">${t} <span onclick="removeTag('${t}')">&times;</span></div>`;
-            });
-        }
-        function addTag() {
-            const input = document.getElementById('new-tag-input');
-            const val = input.value.trim();
-            if(val && !availableTags.includes(val)) {
-                availableTags.push(val);
-                localStorage.setItem('tags_db', JSON.stringify(availableTags));
-                input.value = '';
-                renderAdminTags();
-            }
-        }
-        function removeTag(tag) {
-            if(confirm("Remover tag?")) {
-                availableTags = availableTags.filter(t => t !== tag);
-                localStorage.setItem('tags_db', JSON.stringify(availableTags));
-                renderAdminTags();
-            }
-        }
-
-        // --- PERFIL ---
-        function abrirModalPerfil() {
-            document.getElementById('modal-profile').classList.remove('hidden');
-            document.getElementById('edit-name').value = currentUser.name;
-            document.getElementById('edit-pass').value = currentUser.pass;
-        }
-        function fecharModalPerfil() { document.getElementById('modal-profile').classList.add('hidden'); }
-        function salvarPerfil() {
-            const newName = document.getElementById('edit-name').value;
-            const newPass = document.getElementById('edit-pass').value;
-            if(!newName || !newPass) return alert("Preencha todos os campos!");
-            currentUser.name = newName; currentUser.pass = newPass;
-            const index = usersDB.findIndex(u => u.id === currentUser.id);
-            if(index !== -1) {
-                usersDB[index] = currentUser;
-                localStorage.setItem('users_db', JSON.stringify(usersDB));
-                alert("Perfil atualizado!");
-                document.getElementById('welcome-msg').innerText = currentUser.name;
-                renderGrid();
-                fecharModalPerfil();
+                localStorage.setItem('activities_db_v5', JSON.stringify(activities));
+                atualizarHistorico();
             }
         }
     </script>
