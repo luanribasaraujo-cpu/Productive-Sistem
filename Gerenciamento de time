@@ -3,396 +3,449 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Produção - Checklists</title>
+    <title>Sistema de Produção Pro - Equipes</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
     <style>
-        /* --- ESTILOS GERAIS --- */
         :root {
-            --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8;
-            --accent: #38bdf8; --danger: #ef4444; --success: #10b981;
-            --border: rgba(255, 255, 255, 0.1);
+            --bg: #0f172a; --sidebar: #1e293b; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8;
+            --accent: #38bdf8; --accent-hover: #0284c7; --danger: #ef4444; --success: #10b981;
+            --border: rgba(255, 255, 255, 0.08);
+            --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
         }
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; min-height: 100vh; }
+
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+        body { 
+            font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); 
+            margin: 0; display: flex; height: 100vh; overflow: hidden; 
+        }
+
         .hidden { display: none !important; }
+
+        /* --- SIDEBAR (EQUIPES) --- */
+        aside {
+            width: 260px; background: var(--sidebar); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; padding: 20px; flex-shrink: 0;
+        }
+
+        .sidebar-header { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.1rem; margin-bottom: 30px; color: var(--accent); }
         
-        /* Layout */
-        .top-nav { display: flex; justify-content: space-between; padding: 20px; align-items: center; border-bottom: 1px solid var(--border); background: var(--card); }
-        main { padding: 20px; max-width: 1200px; margin: 0 auto; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 20px; }
+        .team-tabs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+        
+        .tab-item { 
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 15px; border-radius: 10px; cursor: pointer; transition: 0.2s;
+            color: var(--muted); font-weight: 600; border: 1px solid transparent;
+        }
+        .tab-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+        .tab-item.active { background: rgba(56, 189, 248, 0.1); color: var(--accent); border-color: rgba(56, 189, 248, 0.2); }
+        .tab-item .btn-del-team { opacity: 0; transition: 0.2s; color: var(--danger); }
+        .tab-item:hover .btn-del-team { opacity: 1; }
 
-        /* Cards */
-        .card-container { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; position: relative; transition: transform 0.2s; cursor: pointer; }
-        .card-container:hover { transform: translateY(-5px); border-color: var(--accent); }
-        .avatar { width: 100%; height: 220px; border-radius: 8px; object-fit: cover; background: #111; margin-bottom: 12px; opacity: 0.9; }
-        .tags { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
-        .tag { font-size: 12px; padding: 6px 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid var(--border); }
+        .btn-add-team { 
+            margin-top: 15px; background: transparent; border: 1px dashed var(--muted); 
+            color: var(--muted); padding: 10px; border-radius: 8px; cursor: pointer; width: 100%; transition: 0.2s;
+        }
+        .btn-add-team:hover { border-color: var(--accent); color: var(--accent); }
 
-        /* Botões */
-        .nav-btn-secondary { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .nav-btn-secondary:hover { background: var(--accent); color: var(--bg); }
-        button.action-btn { background: var(--accent); color: #000; font-weight: bold; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; width: 100%; transition: 0.2s; margin-top: 10px; }
+        /* --- CONTEÚDO PRINCIPAL --- */
+        main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: #0b1120; }
 
-        /* Modal */
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(5px); padding: 20px; }
-        .modal { width: min(850px, 100%); background: var(--card); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .modal-content { display: flex; gap: 32px; padding: 32px; }
-        @media(max-width: 768px){ .modal-content {flex-direction: column;} .thumb {width: 100%; height: 200px;} }
-        .thumb { width: 280px; height: 350px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
-        .close { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.1); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; }
-        .close:hover { background: var(--danger); }
-        .right-panel { flex: 1; width: 100%; }
+        .top-bar { 
+            padding: 20px 40px; border-bottom: 1px solid var(--border); background: rgba(15, 23, 42, 0.5);
+            display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(10px);
+        }
 
-        /* Inputs & Form */
-        .input-group { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border); border-left: 4px solid var(--accent); }
-        input { background: #0f172a; border: 1px solid var(--border); color: white; padding: 10px; border-radius: 6px; width: 100%; box-sizing: border-box; margin-top: 5px; }
+        .search-container { display: flex; align-items: center; background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 0 15px; width: 350px; }
+        .search-container input { border: none; background: transparent; color: white; padding: 12px; width: 100%; outline: none; }
+        .search-container i { color: var(--muted); }
+
+        .content-body { padding: 40px; max-width: 1300px; margin: 0 auto; width: 100%; }
+
+        .stats-row { display: flex; gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: var(--card); padding: 15px 25px; border-radius: 15px; border: 1px solid var(--border); flex: 1; }
+        .stat-card span { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; font-weight: 700; letter-spacing: 1px; }
+        .stat-card h2 { margin: 5px 0 0 0; font-size: 1.8rem; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 25px; }
+
+        /* --- CARDS & COMPONENTES --- */
+        .card-user { background: var(--card); border-radius: 20px; border: 1px solid var(--border); padding: 20px; cursor: pointer; transition: 0.3s; position: relative; }
+        .card-user:hover { transform: translateY(-5px); border-color: var(--accent); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+        .card-user img { width: 100%; height: 240px; border-radius: 15px; object-fit: cover; margin-bottom: 15px; }
+        .card-user h3 { margin: 0; font-size: 1.2rem; }
+        .card-user .team-badge { position: absolute; top: 30px; right: 30px; background: var(--accent); color: var(--bg); font-size: 0.65rem; padding: 4px 10px; border-radius: 20px; font-weight: 800; text-transform: uppercase; }
+
+        button.primary { background: var(--accent); color: var(--bg); border: none; padding: 12px 25px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
+        button.primary:hover { background: var(--accent-hover); transform: scale(1.02); }
+
+        /* --- MODAIS --- */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-box { background: var(--card); border-radius: 25px; border: 1px solid var(--border); width: min(800px, 95%); max-height: 90vh; overflow-y: auto; position: relative; animation: modalIn 0.3s ease-out; }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .modal-grid { display: grid; grid-template-columns: 300px 1fr; gap: 30px; padding: 40px; }
+        @media (max-width: 700px) { .modal-grid { grid-template-columns: 1fr; } .top-bar { flex-direction: column; gap: 15px; } .search-container { width: 100%; } }
+
+        .input-group { background: rgba(0,0,0,0.2); padding: 20px; border-radius: 15px; border-left: 5px solid var(--accent); margin-bottom: 20px; }
+        input, select { background: #0f172a; border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; width: 100%; font-family: inherit; margin-top: 5px; }
+        
+        .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; }
+        .toast { background: var(--card); border-left: 4px solid var(--success); color: white; padding: 15px 25px; border-radius: 8px; margin-top: 10px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-lg); animation: slideIn 0.3s forwards; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
     </style>
 </head>
 <body>
 
-    <div class="top-nav">
-        <div style="font-weight: bold; font-size: 1.2rem;">Dashboard de Produção</div>
-        <button class="nav-btn-secondary" onclick="abrirAdmin()">⚙️ Gerenciar Equipe</button>
-    </div>
+    <aside>
+        <div class="sidebar-header">
+            <i class="ph-fill ph-projector-screen-chart"></i>
+            PROD MANAGER
+        </div>
+        
+        <label style="font-size: 0.7rem; color: var(--muted); text-transform: uppercase; font-weight: 800; margin-bottom: 10px; display: block; letter-spacing: 1px;">Equipes</label>
+        
+        <div class="team-tabs" id="team-tabs-list">
+            </div>
+
+        <button class="btn-add-team" onclick="promptAddTeam()">
+            <i class="ph ph-plus"></i> Nova Equipe
+        </button>
+
+        <button class="primary" style="margin-top: 20px; width: 100%;" onclick="abrirAdmin()">
+            <i class="ph ph-gear"></i> Ajustes Equipe
+        </button>
+    </aside>
 
     <main>
-        <div class="grid" id="users-grid"></div>
+        <div class="top-bar">
+            <div class="search-container">
+                <i class="ph ph-magnifying-glass"></i>
+                <input type="text" id="main-search" placeholder="Buscar na equipe..." oninput="renderGrid()">
+            </div>
+            
+            <div style="display: flex; gap: 15px;">
+                <div style="text-align: right;">
+                    <div style="color: var(--muted); font-size: 0.7rem; font-weight: 800;">TOTAL PRODUZIDO</div>
+                    <div style="font-size: 1.2rem; font-weight: 700;" id="global-qtd">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-body">
+            <div class="stats-row">
+                <div class="stat-card">
+                    <span>Membros na Aba</span>
+                    <h2 id="stats-members">0</h2>
+                </div>
+                <div class="stat-card">
+                    <span>Horas Totais (Aba)</span>
+                    <h2 id="stats-hours">00:00</h2>
+                </div>
+            </div>
+
+            <div class="grid" id="users-grid"></div>
+        </div>
     </main>
 
-    <div id="modal-admin" class="modal-backdrop hidden" style="z-index: 200;">
-        <div class="modal" style="width: 450px;">
-            <div style="padding: 30px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-                    <h2 style="margin:0; color: var(--accent);">⚙️ Gerenciar Equipe</h2>
-                    <button onclick="fecharAdmin()" style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">×</button>
-                </div>
-                
-                <div class="input-group" style="border-left-color: var(--success);">
-                    <label style="color:var(--muted); font-size:0.8rem">Novo Integrante</label>
-                    <div style="display: flex; gap: 10px; align-items: flex-end;">
-                        <div style="flex: 1;">
-                            <input type="text" id="new-user-name" placeholder="Nome do integrante" style="margin:0;">
-                        </div>
-                        <button class="action-btn" style="width: auto; margin:0; background: var(--success);" onclick="addUser()">Adicionar</button>
-                    </div>
+    <div id="modal-admin" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 500px;">
+            <div style="padding: 40px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 30px;">
+                    <h2 style="margin:0;"><i class="ph ph-users-four" style="color: var(--accent);"></i> Gerenciar Pessoas</h2>
+                    <button class="close" onclick="fecharAdmin()"><i class="ph ph-x"></i></button>
                 </div>
 
-                <h4 style="color: var(--muted); border-bottom:1px solid var(--border); padding-bottom:5px;">Membros Ativos</h4>
-                <div id="admin-users-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 300px; overflow-y: auto;">
+                <div class="input-group" style="border-color: var(--success);">
+                    <label>Novo Integrante</label>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <input type="text" id="new-user-name" placeholder="Nome completo">
+                        <button class="primary" style="background: var(--success); padding: 0 15px;" onclick="addUser()">
+                            <i class="ph ph-plus"></i>
+                        </button>
                     </div>
+                    <p style="font-size: 0.7rem; color: var(--muted); margin-top: 10px;">* Será adicionado automaticamente na equipe selecionada.</p>
+                </div>
+
+                <div id="admin-users-list" style="max-height: 300px; overflow-y: auto;"></div>
             </div>
         </div>
     </div>
 
-    <div id="modal-backdrop" class="modal-backdrop hidden">
-        <div class="modal">
-            <button class="close" onclick="fecharModal()">×</button>
-            <div class="modal-content">
-                <img src="" id="modal-avatar" class="thumb">
+    <div id="modal-user" class="modal-overlay hidden">
+        <div class="modal-box">
+            <button class="close" style="top: 20px; right: 20px; position: absolute;" onclick="fecharModal()"><i class="ph ph-x"></i></button>
+            <div class="modal-grid">
+                <img src="" id="m-avatar" style="width: 100%; border-radius: 15px;">
                 
-                <div class="right-panel">
-                    <h2 id="modal-name" style="margin-top: 0;">Nome</h2>
-                    
-                    <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-                        <div class="tag">Horas Locais: <strong id="modal-total-hours" style="color:white">00:00</strong></div>
-                        <div class="tag">Apontamentos Locais: <strong id="modal-total-qtd" style="color:white">0</strong></div>
-                        <div class="tag" style="border-color: var(--accent); background: rgba(56, 189, 248, 0.1);">
-                            Checklists Planilha: <strong id="modal-api-qtd" style="color:var(--accent)">Carregando...</strong>
-                        </div>
-                    </div>
+                <div>
+                    <h1 id="m-name" style="margin: 0 0 10px 0;">Nome</h1>
+                    <div id="m-team-label" style="color: var(--accent); font-weight: 800; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 20px;">EQUIPE</div>
 
-                    <div id="form-container" class="input-group">
-                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                            <div style="flex: 1;">
-                                <label style="color:var(--muted); font-size:0.8rem">Checklists (Puxado da Planilha)</label>
-                                <input type="number" id="input-qtd" readonly style="background: rgba(255,255,255,0.05); color: var(--accent); font-weight: bold;" value="0">
+                    <div class="input-group">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div>
+                                <label>Qtd. Planilha</label>
+                                <input type="number" id="input-qtd" readonly style="opacity: 0.6; cursor: not-allowed;">
                             </div>
-                            <div style="flex: 1;">
-                                <label style="color:var(--muted); font-size:0.8rem">Tempo Utilizado</label>
-                                <input type="time" id="input-time" oninput="calcularMedia()" required>
+                            <div>
+                                <label>Tempo Gasto</label>
+                                <input type="time" id="input-time" oninput="calcMedia()">
                             </div>
                         </div>
-                        
-                        <div style="text-align: center; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 6px; border: 1px solid var(--border);">
-                            Média desta sessão: <br>
-                            <strong id="calc-projecao" style="color: var(--accent); font-size: 1.5rem;">0.00 /h</strong>
+                        <div style="margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 10px; text-align: center;">
+                            <span style="color: var(--muted); font-size: 0.7rem; font-weight: 800;">MÉDIA ATUAL</span>
+                            <div id="m-media" style="font-size: 1.5rem; font-weight: 700; color: var(--accent);">0.00 /h</div>
                         </div>
-
-                        <button class="action-btn" onclick="salvarAtividade()">Registrar Apontamento</button>
+                        <button class="primary" style="width: 100%; margin-top: 15px;" onclick="saveAct()">
+                            <i class="ph ph-floppy-disk"></i> Registrar Produção
+                        </button>
                     </div>
 
-                    <h4 style="color: var(--muted); border-bottom:1px solid var(--border); padding-bottom:5px;">Histórico Local</h4>
-                    <ul id="history-list" style="list-style: none; padding: 0; max-height: 200px; overflow-y: auto;"></ul>
+                    <h4 style="color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 10px;">Histórico Local</h4>
+                    <div id="m-history" style="max-height: 200px; overflow-y: auto;"></div>
                 </div>
             </div>
         </div>
     </div>
+
+    <div class="toast-container" id="toasts"></div>
 
     <script>
-        // ==========================================
-        // 🔗 COLOQUE AQUI O SEU LINK DO GOOGLE APPS SCRIPT
-        // ==========================================
-        const URL_API = "SUA_URL_DO_APPS_SCRIPT_AQUI"; 
-
-        // --- DADOS INICIAIS ---
-        let usersDB = JSON.parse(localStorage.getItem('users_db_v6')) || [
-            { id: 1, name: "Luan", avatar: "https://ui-avatars.com/api/?name=Luan&background=38bdf8&color=fff" },
-            { id: 2, name: "Rapha", avatar: "https://ui-avatars.com/api/?name=Rapha&background=38bdf8&color=fff" }
+        // --- BANCO DE DADOS LOCAL ---
+        let teams = JSON.parse(localStorage.getItem('prod_teams_v1')) || [
+            { id: 'all', name: 'Todos' },
+            { id: 'clt', name: 'Equipe CLT' },
+            { id: 'estagio', name: 'Estagiários' }
         ];
 
-        let selectedUserForModal = null;
-        let activities = JSON.parse(localStorage.getItem('activities_db_v5')) || [];
+        let users = JSON.parse(localStorage.getItem('prod_users_v1')) || [];
+        let activities = JSON.parse(localStorage.getItem('prod_acts_v1')) || [];
+        let currentTab = 'all';
+        let selectedUser = null;
 
-        window.onload = () => renderGrid();
+        window.onload = () => {
+            renderTabs();
+            renderGrid();
+        };
 
-        // ==========================================
-        // PAINEL ADMIN (GERENCIAR USUÁRIOS)
-        // ==========================================
-        function abrirAdmin() {
-            document.getElementById('modal-admin').classList.remove('hidden');
-            renderAdminUsers();
-        }
-
-        function fecharAdmin() {
-            document.getElementById('modal-admin').classList.add('hidden');
-        }
-
-        function renderAdminUsers() {
-            const list = document.getElementById('admin-users-list');
+        // --- GESTÃO DE EQUIPES (ABAS) ---
+        function renderTabs() {
+            const list = document.getElementById('team-tabs-list');
             list.innerHTML = '';
-            usersDB.forEach(u => {
+            teams.forEach(t => {
+                const isActive = currentTab === t.id ? 'active' : '';
                 list.innerHTML += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 6px; border: 1px solid var(--border);">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <img src="${u.avatar}" style="width: 30px; height: 30px; border-radius: 50%;">
-                            <span style="font-weight: bold;">${u.name}</span>
-                        </div>
-                        <button onclick="deleteUser(${u.id})" style="background:none; border:none; color: var(--danger); cursor:pointer; font-weight: bold; font-size: 0.9rem;">Remover</button>
+                    <div class="tab-item ${isActive}" onclick="selectTab('${t.id}')">
+                        <span>${t.name}</span>
+                        ${t.id !== 'all' ? `<i class="ph ph-trash btn-del-team" onclick="deleteTeam(event, '${t.id}')"></i>` : ''}
                     </div>
                 `;
             });
         }
 
-        function addUser() {
-            const nameInput = document.getElementById('new-user-name');
-            const name = nameInput.value.trim();
-            if (!name) return alert('Por favor, digite um nome!');
-            
-            const newId = Date.now();
-            // Gera um avatar automático bonito com a letra do nome
-            const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=38bdf8&color=fff`;
-            
-            usersDB.push({ id: newId, name: name, avatar: avatar });
-            localStorage.setItem('users_db_v6', JSON.stringify(usersDB));
-            
-            nameInput.value = '';
-            renderAdminUsers();
+        function selectTab(id) {
+            currentTab = id;
+            renderTabs();
             renderGrid();
         }
 
-        function deleteUser(id) {
-            if(confirm("Tem certeza que deseja remover este usuário?")) {
-                usersDB = usersDB.filter(u => u.id !== id);
-                localStorage.setItem('users_db_v6', JSON.stringify(usersDB));
-                renderAdminUsers();
+        function promptAddTeam() {
+            const name = prompt("Nome da nova equipe/categoria:");
+            if (name) {
+                const id = 'team_' + Date.now();
+                teams.push({ id, name });
+                saveTeams();
+                renderTabs();
+                showToast(`Equipe "${name}" criada!`);
+            }
+        }
+
+        function deleteTeam(e, id) {
+            e.stopPropagation();
+            if(confirm("Excluir esta equipe? (Os membros não serão apagados, apenas perderão o vínculo)")) {
+                teams = teams.filter(t => t.id !== id);
+                if (currentTab === id) currentTab = 'all';
+                saveTeams();
+                renderTabs();
                 renderGrid();
             }
         }
 
-        // ==========================================
-        // INTEGRAÇÃO COM API (GOOGLE SHEETS)
-        // ==========================================
-        async function buscarCheckboxes(nomeUsuario) {
-            const inputQtd = document.getElementById('input-qtd');
-            const displayApi = document.getElementById('modal-api-qtd');
-            
-            inputQtd.value = "⏳";
-            displayApi.innerText = "Buscando...";
-            
-            if (URL_API === "SUA_URL_DO_APPS_SCRIPT_AQUI") {
-                inputQtd.value = "0";
-                displayApi.innerText = "Link não configurado";
-                return;
-            }
+        function saveTeams() { localStorage.setItem('prod_teams_v1', JSON.stringify(teams)); }
 
-            try {
-                const response = await fetch(URL_API);
-                const dados = await response.json();
-                const dadosUsuario = dados.find(d => d.nome === nomeUsuario);
+        // --- GESTÃO DE MEMBROS ---
+        function renderGrid() {
+            const grid = document.getElementById('users-grid');
+            const term = document.getElementById('main-search').value.toLowerCase();
+            grid.innerHTML = '';
+
+            let filtered = users;
+            // Filtro por Aba
+            if (currentTab !== 'all') filtered = filtered.filter(u => u.teamId === currentTab);
+            // Filtro por Busca
+            if (term) filtered = filtered.filter(u => u.name.toLowerCase().includes(term));
+
+            let totalQtdGlobal = 0;
+            let totalMinAba = 0;
+
+            filtered.forEach(u => {
+                const uActs = activities.filter(a => a.userId === u.id);
+                const uQtd = uActs.reduce((acc, c) => acc + c.qtd, 0);
+                const uMin = uActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
                 
-                if (dadosUsuario) {
-                    inputQtd.value = dadosUsuario.checklistsConcluidos;
-                    displayApi.innerText = dadosUsuario.checklistsConcluidos;
-                } else {
-                    inputQtd.value = "0";
-                    displayApi.innerText = "0";
-                }
-            } catch (error) {
-                inputQtd.value = "0";
-                displayApi.innerText = "Erro de conexão";
-                console.error("Erro ao puxar dados da API:", error);
-            }
+                totalMinAba += uMin;
+                totalQtdGlobal += uQtd;
+
+                const teamName = teams.find(t => t.id === u.teamId)?.name || 'Sem Equipe';
+
+                grid.innerHTML += `
+                    <div class="card-user" onclick="openUserModal(${u.id})">
+                        <div class="team-badge">${teamName}</div>
+                        <img src="${u.avatar}">
+                        <h3>${u.name}</h3>
+                        <div class="tags">
+                            <span class="tag"><i class="ph ph-clock"></i> ${minToTime(uMin)}</span>
+                            <span class="tag"><i class="ph ph-package"></i> ${uQtd} un.</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('stats-members').innerText = filtered.length;
+            document.getElementById('stats-hours').innerText = minToTime(totalMinAba);
+            document.getElementById('global-qtd').innerText = activities.reduce((acc, c) => acc + c.qtd, 0);
+        }
+
+        function addUser() {
+            const name = document.getElementById('new-user-name').value.trim();
+            if (!name) return;
             
-            calcularMedia();
+            const newUser = {
+                id: Date.now(),
+                name: name,
+                teamId: currentTab === 'all' ? (teams[1]?.id || 'all') : currentTab,
+                avatar: `https://ui-avatars.com/api/?name=${name}&background=38bdf8&color=fff&size=512`
+            };
+
+            users.push(newUser);
+            localStorage.setItem('prod_users_v1', JSON.stringify(users));
+            document.getElementById('new-user-name').value = '';
+            renderGrid();
+            renderAdminUsers();
+            showToast("Membro adicionado!");
         }
 
-        async function enviarDadosAPI(nome, producao, tempoHorasDecimais) {
-            if (URL_API === "SUA_URL_DO_APPS_SCRIPT_AQUI") return;
-            try {
-                await fetch(URL_API, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        nome: nome,
-                        producao: producao,
-                        tempo: tempoHorasDecimais
-                    })
-                });
-            } catch (error) {
-                console.error("Erro ao enviar para API:", error);
-            }
+        // --- MODAL USUÁRIO ---
+        function openUserModal(id) {
+            selectedUser = users.find(u => u.id === id);
+            document.getElementById('modal-user').classList.remove('hidden');
+            document.getElementById('m-name').innerText = selectedUser.name;
+            document.getElementById('m-avatar').src = selectedUser.avatar;
+            document.getElementById('m-team-label').innerText = teams.find(t => t.id === selectedUser.teamId)?.name || 'Sem Equipe';
+            
+            document.getElementById('input-time').value = '';
+            document.getElementById('m-media').innerText = '0.00 /h';
+            
+            updateHistory();
+            // Simulação de busca na planilha (Qtd Aleatória para exemplo)
+            document.getElementById('input-qtd').value = Math.floor(Math.random() * 50) + 10;
+            calcMedia();
         }
 
-        // ==========================================
-        // UTILITÁRIOS
-        // ==========================================
+        function saveAct() {
+            const time = document.getElementById('input-time').value;
+            const qtd = Number(document.getElementById('input-qtd').value);
+
+            if(!time) return showToast("Preencha o tempo!", "error");
+
+            activities.push({
+                id: Date.now(),
+                userId: selectedUser.id,
+                qtd,
+                time,
+                date: new Date().toLocaleDateString('pt-BR')
+            });
+
+            localStorage.setItem('prod_acts_v1', JSON.stringify(activities));
+            updateHistory();
+            renderGrid();
+            showToast("Registro salvo com sucesso!");
+        }
+
+        // --- AUXILIARES ---
         function timeToMin(t) { 
             if(!t) return 0; 
-            const parts = t.split(':').map(Number);
-            return (parts[0] * 60) + parts[1]; 
+            const p = t.split(':').map(Number); 
+            return (p[0] * 60) + p[1]; 
         }
         
         function minToTime(m) { 
             const h = Math.floor(m / 60); 
             const mn = m % 60; 
-            return `${String(h).padStart(2,'0')}h ${String(mn).padStart(2,'0')}m`; 
+            return `${String(h).padStart(2,'0')}h${String(mn).padStart(2,'0')}`; 
         }
 
-        // ==========================================
-        // GRID PRINCIPAL E MODAL
-        // ==========================================
-        function renderGrid() {
-            const grid = document.getElementById('users-grid');
-            grid.innerHTML = '';
-            
-            usersDB.forEach(user => {
-                // Como tiramos o filtro de data, ele agora carrega todos os registros do histórico local desse usuário
-                const userActs = activities.filter(a => a.userId === user.id);
-                const totalQtd = userActs.reduce((acc, c) => acc + c.qtd, 0);
-                const totalMin = userActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
-
-                grid.innerHTML += `
-                    <div class="card-container" onclick="abrirModal(${user.id})">
-                        <img class="avatar" src="${user.avatar}">
-                        <h3 style="margin:0">${user.name}</h3>
-                        <div class="tags">
-                            <span class="tag">⏱ ${minToTime(totalMin)} local</span>
-                            <span class="tag">📦 ${totalQtd} local</span>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-
-        function abrirModal(userId) {
-            const user = usersDB.find(u => u.id === userId);
-            selectedUserForModal = user;
-            
-            document.getElementById('modal-backdrop').classList.remove('hidden');
-            document.getElementById('modal-avatar').src = user.avatar;
-            document.getElementById('modal-name').innerText = user.name;
-            
-            document.getElementById('input-time').value = '';
-            document.getElementById('calc-projecao').innerText = '0.00 /h';
-            
-            atualizarHistorico();
-            buscarCheckboxes(user.name);
-        }
-
-        function fecharModal() {
-            document.getElementById('modal-backdrop').classList.add('hidden');
-            renderGrid();
-        }
-
-        // ==========================================
-        // CÁLCULO E REGISTRO
-        // ==========================================
-        function calcularMedia() {
-            const tempoStr = document.getElementById('input-time').value;
-            const qtd = Number(document.getElementById('input-qtd').value) || 0;
-            let media = 0;
-            
-            if(tempoStr) {
-                const parts = tempoStr.split(':').map(Number);
-                const horasDecimais = parts[0] + (parts[1] / 60);
-                if (horasDecimais > 0) {
-                    media = (qtd / horasDecimais).toFixed(2);
-                }
+        function calcMedia() {
+            const t = document.getElementById('input-time').value;
+            const q = Number(document.getElementById('input-qtd').value);
+            if(t) {
+                const p = t.split(':').map(Number);
+                const dec = p[0] + (p[1]/60);
+                document.getElementById('m-media').innerText = dec > 0 ? (q/dec).toFixed(2) + ' /h' : '0.00 /h';
             }
-            document.getElementById('calc-projecao').innerText = `${media} /h`;
         }
 
-        function atualizarHistorico() {
-            const userActs = activities.filter(a => a.userId === selectedUserForModal.id);
-            
-            document.getElementById('modal-total-hours').innerText = minToTime(userActs.reduce((acc, c) => acc + timeToMin(c.time), 0));
-            document.getElementById('modal-total-qtd').innerText = userActs.reduce((acc, c) => acc + c.qtd, 0);
-
-            const list = document.getElementById('history-list');
-            list.innerHTML = '';
-            [...userActs].reverse().forEach(act => {
-                const parts = act.time.split(':').map(Number);
-                const horas = parts[0] + (parts[1] / 60);
-                const rate = horas > 0 ? (act.qtd / horas).toFixed(1) : 0;
-                
-                list.innerHTML += `
-                    <li style="background:rgba(255,255,255,0.05); padding:10px; margin-bottom:5px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-                        <div style="font-size:0.75rem; color:#888;">${act.date}</div>
-                        <div style="text-align:right; display:flex; align-items:center; gap:10px;">
-                            <div>
-                                <strong style="color:var(--accent)">${act.qtd} un.</strong>
-                                <div style="font-size:0.85rem;">⏱ ${act.time}</div>
-                                <div style="font-size:0.75rem; color:var(--muted);">(${rate} /h)</div>
-                            </div>
-                            <button onclick="delAct(${act.id})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:1.2rem;">&times;</button>
-                        </div>
-                    </li>
-                `;
-            });
+        function updateHistory() {
+            const hist = document.getElementById('m-history');
+            const uActs = activities.filter(a => a.userId === selectedUser.id);
+            hist.innerHTML = uActs.reverse().map(a => `
+                <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; font-size: 0.8rem;">
+                    <span><b>${a.date}</b> - ${a.time}</span>
+                    <span style="color: var(--accent)">${a.qtd} un.</span>
+                </div>
+            `).join('');
         }
 
-        function salvarAtividade() {
-            let tempo = document.getElementById('input-time').value;
-            let qtd = Number(document.getElementById('input-qtd').value);
-
-            if (!tempo) {
-                alert("Por favor, preencha o Tempo Utilizado!");
-                return;
-            }
-
-            const parts = tempo.split(':').map(Number);
-            const horasDecimais = parts[0] + (parts[1] / 60);
-
-            activities.push({
-                id: Date.now(),
-                userId: selectedUserForModal.id,
-                qtd: qtd, 
-                time: tempo,      
-                date: new Date().toLocaleDateString('pt-BR')
-            });
-            localStorage.setItem('activities_db_v5', JSON.stringify(activities));
-            
-            enviarDadosAPI(selectedUserForModal.name, qtd, horasDecimais.toFixed(2));
-
-            document.getElementById('input-time').value = '';
-            document.getElementById('calc-projecao').innerText = '0.00 /h';
-            atualizarHistorico();
+        function showToast(msg, type = 'success') {
+            const c = document.getElementById('toasts');
+            const t = document.createElement('div');
+            t.className = 'toast';
+            if(type === 'error') t.style.borderLeftColor = 'var(--danger)';
+            t.innerHTML = `<i class="ph ph-info"></i> ${msg}`;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
         }
 
-        function delAct(id) {
-            if(confirm("Deseja realmente apagar este registro do histórico local?")) {
-                activities = activities.filter(a => a.id !== id);
-                localStorage.setItem('activities_db_v5', JSON.stringify(activities));
-                atualizarHistorico();
+        function abrirAdmin() { 
+            document.getElementById('modal-admin').classList.remove('hidden'); 
+            renderAdminUsers();
+        }
+        function fecharAdmin() { document.getElementById('modal-admin').classList.add('hidden'); }
+        function fecharModal() { document.getElementById('modal-user').classList.add('hidden'); }
+
+        function renderAdminUsers() {
+            const list = document.getElementById('admin-users-list');
+            list.innerHTML = users.map(u => `
+                <div style="display: flex; justify-content: space-between; align-items:center; padding: 10px; border-bottom: 1px solid var(--border);">
+                    <span style="font-size: 0.9rem;">${u.name}</span>
+                    <button onclick="delUser(${u.id})" style="background:none; border:none; color: var(--danger); cursor:pointer;"><i class="ph ph-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function delUser(id) {
+            if(confirm("Remover este membro permanentemente?")) {
+                users = users.filter(u => u.id !== id);
+                localStorage.setItem('prod_users_v1', JSON.stringify(users));
+                renderGrid();
+                renderAdminUsers();
             }
         }
     </script>
