@@ -161,7 +161,7 @@
                     <input type="number" id="global-media" onchange="saveGlobalMedia()" value="0" style="background: transparent; border: none; border-bottom: 1px dashed var(--accent); color: var(--accent); font-size: 1.3rem; font-weight: 800; width: 80px; text-align: right; outline: none; padding: 0; margin: 0; box-shadow: none;">
                 </div>
                 
-                <button class="primary outline" style="padding: 10px; border-radius: 10px; border-color: var(--border); width: 45px; height: 45px;" onclick="abrirModalConfigApi()" title="Vincular Planilha (API)">
+                <button class="primary outline" style="padding: 10px; border-radius: 10px; border-color: var(--border); width: 45px; height: 45px;" onclick="abrirModalConfigApi()" title="Vincular Integrações (APIs)">
                     <i class="ph-bold ph-link" style="font-size: 1.3rem; color: var(--muted);"></i>
                 </button>
             </div>
@@ -183,18 +183,22 @@
         <div class="modal-box" style="max-width: 450px;">
             <div style="padding: 30px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 25px;">
-                    <h2 style="margin:0; display: flex; align-items: center; gap: 10px;"><i class="ph-fill ph-link" style="color: var(--accent);"></i> Vincular Planilha</h2>
+                    <h2 style="margin:0; display: flex; align-items: center; gap: 10px;"><i class="ph-fill ph-link" style="color: var(--accent);"></i> Vincular Integrações</h2>
                     <button class="close-btn" onclick="fecharModalConfigApi()"><i class="ph ph-x"></i></button>
                 </div>
 
                 <div class="input-group">
-                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">URL do Google Apps Script (Web App)</label>
-                    <input type="text" id="api-url-input" placeholder="Cole a URL gerada pelo Google Sheets aqui..." onkeypress="if(event.key === 'Enter') salvarConfigApi()">
-                    <p style="font-size: 0.75rem; color: var(--muted); margin-top: 10px;">
-                        <i class="ph-fill ph-info"></i> Com a URL salva, o sistema puxará as quantidades de forma automática na hora de registrar a produção.
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">URL do Google Sheets (Quantidades)</label>
+                    <input type="text" id="api-url-input" placeholder="Cole a URL gerada pelo Google Sheets aqui..." style="margin-bottom: 15px;">
+
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">URL do Clockify (Tempo)</label>
+                    <input type="text" id="api-clockify-url-input" placeholder="Cole a URL do Clockify aqui..." onkeypress="if(event.key === 'Enter') salvarConfigApi()">
+
+                    <p style="font-size: 0.75rem; color: var(--muted); margin-top: 15px;">
+                        <i class="ph-fill ph-info"></i> O sistema utilizará esses links para puxar as quantidades e os tempos de forma automática.
                     </p>
                     <button class="primary" style="width: 100%; margin-top: 20px;" onclick="salvarConfigApi()">
-                        <i class="ph-bold ph-floppy-disk"></i> Salvar Vínculo
+                        <i class="ph-bold ph-floppy-disk"></i> Salvar Vínculos
                     </button>
                 </div>
             </div>
@@ -320,8 +324,9 @@
         let activities = JSON.parse(localStorage.getItem('prod_acts_v1')) || [];
         let globalMediaValue = localStorage.getItem('prod_global_media_v1') || 0;
         
-        // VARIÁVEL DA URL DA API
+        // VARIÁVEIS DAS URLs DAS APIs
         let apiPlanilhaUrl = localStorage.getItem('prod_api_url_v1') || "";
+        let apiClockifyUrl = localStorage.getItem('prod_clockify_url_v1') || ""; // NOVO CAMPO CLOCKIFY
         
         let currentTab = 'all';
         let selectedUser = null;
@@ -340,10 +345,14 @@
 
         // --- FUNÇÕES DA CONFIGURAÇÃO DE API ---
         function abrirModalConfigApi() {
-            const input = document.getElementById('api-url-input');
-            input.value = apiPlanilhaUrl;
+            const inputSheets = document.getElementById('api-url-input');
+            const inputClockify = document.getElementById('api-clockify-url-input');
+            
+            inputSheets.value = apiPlanilhaUrl;
+            inputClockify.value = apiClockifyUrl;
+            
             document.getElementById('modal-config-api').classList.remove('hidden');
-            setTimeout(() => input.focus(), 100);
+            setTimeout(() => inputSheets.focus(), 100);
         }
 
         function fecharModalConfigApi() {
@@ -352,9 +361,13 @@
 
         function salvarConfigApi() {
             apiPlanilhaUrl = document.getElementById('api-url-input').value.trim();
+            apiClockifyUrl = document.getElementById('api-clockify-url-input').value.trim();
+            
             localStorage.setItem('prod_api_url_v1', apiPlanilhaUrl);
+            localStorage.setItem('prod_clockify_url_v1', apiClockifyUrl);
+            
             fecharModalConfigApi();
-            showToast("Vínculo da planilha salvo com sucesso!");
+            showToast("Vínculos das APIs salvos com sucesso!");
         }
 
         // --- SISTEMA DE CONFIRMAÇÃO CUSTOMIZADO (UX PROFISSIONAL) ---
@@ -514,46 +527,62 @@
             document.getElementById('m-avatar').src = selectedUser.avatar;
             document.getElementById('m-team-label').innerText = teams.find(t => t.id === selectedUser.teamId)?.name || 'Sem Equipe';
             
+            // Reseta os campos
             document.getElementById('input-time').value = '';
             document.getElementById('m-media').innerHTML = '0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span>';
-            
             updateHistory();
 
             const inputQtd = document.getElementById('input-qtd');
             const iconQtd = document.getElementById('qtd-icon');
             
-            // VERIFICA SE A URL FOI CONFIGURADA
+            // --- LÓGICA DE QUANTIDADE (Planilha) ---
             if (!apiPlanilhaUrl) {
                 inputQtd.type = "text";
                 inputQtd.value = "Sem Vínculo";
                 iconQtd.className = "ph-fill ph-warning-circle";
                 iconQtd.style.color = "var(--danger)";
-                showToast("Vincule a Planilha no topo da página primeiro.", "error");
-                return;
+            } else {
+                inputQtd.type = "text"; 
+                inputQtd.value = "Sincronizando...";
+                iconQtd.className = "ph ph-spinner-gap loading-spinner";
+                
+                fetch(`${apiPlanilhaUrl}?nome=${encodeURIComponent(selectedUser.name)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        inputQtd.type = "number"; 
+                        inputQtd.value = data.qtd || 0; 
+                        iconQtd.className = "ph-fill ph-check-circle";
+                        iconQtd.style.color = "var(--success)";
+                        calcMedia();
+                    })
+                    .catch(error => {
+                        inputQtd.value = 0;
+                    });
             }
 
-            inputQtd.type = "text"; 
-            inputQtd.value = "Sincronizando...";
-            iconQtd.className = "ph ph-spinner-gap loading-spinner";
-            iconQtd.style.color = "var(--accent)";
-
-            fetch(`${apiPlanilhaUrl}?nome=${encodeURIComponent(selectedUser.name)}`)
-                .then(response => response.json())
-                .then(data => {
-                    inputQtd.type = "number"; 
-                    inputQtd.value = data.qtd || 0; 
-                    iconQtd.className = "ph-fill ph-check-circle";
-                    iconQtd.style.color = "var(--success)";
-                    calcMedia();
-                })
-                .catch(error => {
-                    console.error("Erro na API:", error);
-                    inputQtd.type = "number";
-                    inputQtd.value = 0;
-                    iconQtd.className = "ph-fill ph-warning-circle";
-                    iconQtd.style.color = "var(--danger)";
-                    showToast("Falha ao buscar dados na planilha. Verifique a URL.", "error");
-                });
+            // --- LÓGICA CLOCKIFY (TEMPO) ---
+            const inputTime = document.getElementById('input-time');
+            inputTime.value = ""; 
+            
+            if (apiClockifyUrl) {
+                fetch(apiClockifyUrl)
+                    .then(res => res.json())
+                    .then(dataClockify => {
+                        const userTime = dataClockify.find(d => d.nome.toLowerCase() === selectedUser.name.toLowerCase());
+                        
+                        if (userTime) {
+                            inputTime.value = userTime.tempo; 
+                            calcMedia(); 
+                            showToast(`Tempo de ${userTime.tempo} puxado do Clockify!`, 'success');
+                        } else {
+                            showToast(`Nenhum tempo cronometrado hoje para ${selectedUser.name}.`, 'error');
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Erro Clockify:", err);
+                        showToast("Falha ao puxar dados do Clockify.", "error");
+                    });
+            }
         }
 
         function saveAct() {
