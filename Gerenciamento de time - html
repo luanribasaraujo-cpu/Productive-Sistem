@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Produção Pro - Equipes</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <aside>
+        <div class="sidebar-header">
+            <div style="background: var(--accent); color: var(--bg); padding: 8px; border-radius: 10px; display: flex;">
+                <i class="ph-fill ph-projector-screen-chart"></i>
+            </div>
+            PROD MANAGER
+        </div>
+        
+        <label style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; font-weight: 700; margin-bottom: 12px; display: block; letter-spacing: 1px;">Equipes</label>
+        
+        <div class="team-tabs" id="team-tabs-list"></div>
+
+        <button class="btn-add-team" onclick="abrirModalAddTeam()">
+            <i class="ph-bold ph-plus"></i> Nova Equipe
+        </button>
+
+        <button class="primary outline" style="margin-top: 20px; width: 100%; border: 1px solid var(--border);" onclick="abrirAdmin()">
+            <i class="ph ph-gear"></i> Ajustes de Equipe
+        </button>
+    </aside>
+
+    <main>
+        <div class="top-bar">
+            <div style="display: flex; gap: 15px; flex: 1; align-items: center;">
+                <div class="search-container" style="max-width: 300px; width: 100%;">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <input type="text" id="main-search" placeholder="Buscar na equipe..." oninput="renderGrid()">
+                </div>
+                
+                <select id="filter-period" onchange="renderGrid()" style="padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.5); color: #fff; outline: none; cursor: pointer; font-size: 0.85rem; height: 42px;">
+                    <option value="today">📅 Hoje</option>
+                    <option value="yesterday">📅 Ontem</option>
+                    <option value="week" selected>📅 Esta Semana</option>
+                    <option value="last_week">📅 Semana Passada</option>
+                    <option value="month">📅 Este Mês</option>
+                    <option value="all">📅 Todo o Período</option>
+                </select>
+                
+                <div style="display: flex; gap: 5px; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 12px; border: 1px solid var(--border);">
+                    <button id="btn-view-grid" onclick="switchView('grid')" class="primary" style="padding: 8px 15px; border-radius: 8px; font-size: 0.85rem; width: auto;">
+                        <i class="ph-bold ph-squares-four"></i> Cards
+                    </button>
+                    <button id="btn-view-charts" onclick="switchView('charts')" class="primary outline" style="padding: 8px 15px; border-radius: 8px; font-size: 0.85rem; width: auto; border: none;">
+                        <i class="ph-bold ph-chart-bar"></i> Gráficos
+                    </button>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 10px; align-items: center; background: rgba(0,0,0,0.2); padding: 8px 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <div style="text-align: right; padding-right: 10px; border-right: 1px solid var(--border);">
+                    <div style="color: var(--muted); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.5px;">META / MÉDIA GLOBAL</div>
+                    <input type="number" id="global-media" onchange="saveGlobalMedia()" value="0" style="background: transparent; border: none; border-bottom: 1px dashed var(--accent); color: var(--accent); font-size: 1.3rem; font-weight: 800; width: 80px; text-align: right; outline: none; padding: 0; margin: 0; box-shadow: none;">
+                </div>
+                
+                <button class="primary outline" style="padding: 10px; border-radius: 10px; border-color: var(--border); width: 45px; height: 45px;" onclick="abrirModalConfigApi()" title="Vincular Integrações (APIs)">
+                    <i class="ph-bold ph-link" style="font-size: 1.3rem; color: var(--muted);"></i>
+                </button>
+
+                <button class="primary outline" style="padding: 10px; border-radius: 10px; border-color: var(--border); width: 45px; height: 45px; cursor: pointer;" onclick="toggleTheme()" title="Alternar Tema">
+                    <i class="ph-fill ph-moon" id="theme-icon" style="font-size: 1.3rem; color: var(--muted); transition: 0.3s;"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="content-body">
+            <div id="view-grid-container">
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <span><i class="ph-fill ph-users" style="color: var(--accent); margin-right: 5px;"></i> Membros Exibidos</span>
+                        <h2 id="stats-members">0</h2>
+                    </div>
+                </div>
+                <div class="grid" id="users-grid"></div>
+            </div>
+
+            <div id="view-charts-container" class="hidden">
+                <div style="background: rgba(0,0,0,0.2); padding: 15px 20px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                    
+                    <div style="display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--border); padding-right: 15px;">
+                        <i class="ph-bold ph-funnel" style="color: var(--muted);"></i>
+                        <select id="chart-mode" onchange="renderCharts()" style="padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.5); color: #fff; outline: none; cursor: pointer; font-size: 0.85rem;">
+                            <option value="members">Por Pessoas</option>
+                            <option value="teams">Por Equipes (Somatório)</option>
+                        </select>
+                        <input type="text" id="chart-search" placeholder="Pesquisar nome..." oninput="renderCharts()" style="padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); outline: none; width: 160px; font-size: 0.85rem;">
+                    </div>
+
+                    <div style="color: var(--muted); font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+                        <i class="ph-bold ph-calendar-blank"></i> Período:
+                    </div>
+                    <input type="date" id="chart-date-start" onchange="renderCharts()" style="padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); outline: none; font-size: 0.85rem;">
+                    <span style="color: var(--muted); font-size: 0.9rem;">até</span>
+                    <input type="date" id="chart-date-end" onchange="renderCharts()" style="padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: var(--text); outline: none; font-size: 0.85rem;">
+                    
+                    <button class="primary outline" onclick="limparFiltroData()" style="padding: 10px 15px; border-color: var(--border); margin-left: auto; font-size: 0.85rem;">Limpar</button>
+                </div>
+                
+                <div style="background: rgba(0,0,0,0.2); padding: 30px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-sm);">
+                    <canvas id="teamChart" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-config-api" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 450px;">
+            <div style="padding: 30px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 25px;">
+                    <h2 style="margin:0; display: flex; align-items: center; gap: 10px;"><i class="ph-fill ph-link" style="color: var(--accent);"></i> Vincular Integrações</h2>
+                    <button class="close-btn" onclick="fecharModalConfigApi()"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="input-group">
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">URL do Google Sheets (Quantidades)</label>
+                    <input type="text" id="api-url-input" placeholder="Cole a URL gerada pelo Google Sheets aqui..." style="margin-bottom: 15px;">
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">URL do Clockify (Tempo)</label>
+                    <input type="text" id="api-clockify-url-input" placeholder="Cole a URL do Clockify aqui..." onkeypress="if(event.key === 'Enter') salvarConfigApi()">
+                    <p style="font-size: 0.75rem; color: var(--muted); margin-top: 15px;">
+                        <i class="ph-fill ph-info"></i> O sistema utilizará esses links para puxar as quantidades e os tempos de forma automática.
+                    </p>
+                    <button class="primary" style="width: 100%; margin-top: 20px;" onclick="salvarConfigApi()">
+                        <i class="ph-bold ph-floppy-disk"></i> Salvar Vínculos
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-confirm" class="modal-overlay hidden" style="z-index: 3000;">
+        <div class="modal-box" style="max-width: 400px; text-align: center; padding: 40px 30px;">
+            <div id="confirm-icon" style="background: rgba(239, 68, 68, 0.1); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto;">
+                <i class="ph-fill ph-warning-circle" style="font-size: 3rem; color: var(--danger);"></i>
+            </div>
+            <h2 id="confirm-title" style="margin: 0 0 10px 0; font-size: 1.5rem;">Atenção</h2>
+            <p id="confirm-message" style="color: var(--muted); margin: 0 0 30px 0; line-height: 1.5;"></p>
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button class="primary outline" onclick="fecharConfirm()" style="flex: 1;">Cancelar</button>
+                <button class="primary danger" id="btn-confirm-action" style="flex: 1;">Sim, excluir</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-add-team" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 450px;">
+            <div style="padding: 30px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 25px;">
+                    <h2 style="margin:0; display: flex; align-items: center; gap: 10px;"><i class="ph-fill ph-users-three" style="color: var(--accent);"></i> Nova Equipe</h2>
+                    <button class="close-btn" onclick="fecharModalAddTeam()"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="input-group">
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">Nome da Equipe</label>
+                    <input type="text" id="new-team-input" placeholder="Ex: Equipe de Vendas, Suporte..." onkeypress="if(event.key === 'Enter') confirmarAddTeam()">
+                    <button class="primary" style="width: 100%; margin-top: 20px;" onclick="confirmarAddTeam()">
+                        <i class="ph-bold ph-check"></i> Criar Equipe
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-admin" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 550px;">
+            <div style="padding: 35px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 30px;">
+                    <h2 style="margin:0; display: flex; align-items: center; gap: 10px;"><i class="ph-fill ph-gear" style="color: var(--accent);"></i> Gerenciar Pessoas</h2>
+                    <button class="close-btn" onclick="fecharAdmin()"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="input-group" style="border-left-color: var(--success); background: rgba(16, 185, 129, 0.05);">
+                    <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">Cadastrar Novo Integrante</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <input type="text" id="new-user-name" placeholder="Digite o nome completo" onkeypress="if(event.key === 'Enter') addUser()">
+                        <button class="primary" style="background: var(--success); padding: 0 20px; width: auto;" onclick="addUser()"><i class="ph-bold ph-plus"></i></button>
+                    </div>
+                </div>
+                <h4 style="color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 30px;">Lista de Membros (Todas as Equipes)</h4>
+                <div id="admin-users-list" style="max-height: 250px; overflow-y: auto; padding-right: 10px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-user" class="modal-overlay hidden">
+        <div class="modal-box">
+            <button class="close-btn" style="top: 25px; right: 25px; position: absolute; z-index: 10;" onclick="fecharModal()"><i class="ph ph-x"></i></button>
+            <div class="modal-grid">
+                
+                <div style="text-align: center;">
+                    <img src="" id="m-avatar" style="width: 100%; max-width: 250px; border-radius: 20px; box-shadow: var(--shadow-lg); margin-bottom: 15px;">
+                    <h2 id="m-name" style="margin: 0; font-size: 1.5rem;">Nome</h2>
+                    <div id="m-team-label" style="color: var(--accent); font-weight: 800; font-size: 0.8rem; text-transform: uppercase; margin-top: 5px;">EQUIPE</div>
+                </div>
+                
+                <div>
+                    <h3 style="margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px;"><i class="ph-fill ph-clipboard-text"></i> Registro de Produção</h3>
+                    <div class="input-group">
+                        
+                        <div style="margin-bottom: 15px;">
+                            <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">Data do Apontamento</label>
+                            <input type="date" id="modal-date-picker" onchange="fetchDataForDate()" style="font-weight: bold; color: var(--accent); cursor: pointer;">
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">Qtd. na Planilha</label>
+                                <div style="position: relative;">
+                                    <input type="text" id="input-qtd" readonly style="opacity: 0.7; cursor: not-allowed; padding-left: 40px; font-weight: bold;">
+                                    <i id="qtd-icon" class="ph ph-google-logo" style="position: absolute; left: 12px; top: 18px; color: var(--accent); font-size: 1.2rem;"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.85rem; color: var(--muted); font-weight: 600;">Tempo Gasto</label>
+                                <input type="time" id="input-time" oninput="calcMedia()" style="font-weight: bold;">
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 25px; padding: 20px; background: rgba(0,0,0,0.4); border-radius: 12px; text-align: center; border: 1px solid var(--border);">
+                            <span style="color: var(--muted); font-size: 0.75rem; font-weight: 800; letter-spacing: 1px;">MÉDIA CALCULADA</span>
+                            <div id="m-media" style="font-size: 2rem; font-weight: 800; color: var(--success); margin-top: 5px;">0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span></div>
+                        </div>
+                        
+                        <button class="primary" style="width: 100%; margin-top: 20px; padding: 15px; font-size: 1.1rem;" onclick="saveAct()">
+                            <i class="ph-bold ph-floppy-disk"></i> Salvar no Histórico
+                        </button>
+                    </div>
+
+                    <h4 style="color: var(--muted); margin-bottom: 10px; font-size: 0.9rem;">Últimos Registros Salvos</h4>
+                    <div id="m-history" style="max-height: 180px; overflow-y: auto; padding-right: 5px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toasts"></div>
+
+    <script src="js/main.js"></script>
+
+</body>
+</html>
