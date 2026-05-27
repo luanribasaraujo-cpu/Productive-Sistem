@@ -1,0 +1,893 @@
+// --- CONEXÃO COM O BANCO DE DADOS (SUPABASE) ---
+// Cole suas chaves geradas no site do Supabase aqui embaixo:
+const supabaseUrl = 'https://srnpjfzrtfxjnxphwwgt.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNybnBqZnpydGZ4am54cGh3d2d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4OTQ5MzEsImV4cCI6MjA5NTQ3MDkzMX0.NH43sKbTCwjQpa75c5UFXvc5dr2KSQtqXbRTLzFnVMU';
+// MUDAMOS O NOME AQUI PARA NÃO DAR CONFLITO COM O HTML
+const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+// --- BANCO DE DADOS (AGORA NA NUVEM) ---
+let teams = [];
+let users = [];
+let activities = [];
+
+// VARIÁVEIS DAS URLs DAS APIs E CONFIGURAÇÕES (Mantidas locais por segurança)
+let globalMediaValue = localStorage.getItem('prod_global_media_v1') || 0;
+let apiPlanilhaUrl = localStorage.getItem('prod_api_url_v1') || "";
+let apiClockifyUrl = localStorage.getItem('prod_clockify_url_v1') || ""; 
+
+let currentTab = 'all';
+let selectedUser = null;
+let chartInstances = []; // Guarda múltiplos gráficos
+
+// Transformado em async para aguardar o banco de dados carregar
+window.onload = async () => {
+    document.getElementById('global-media').value = globalMediaValue;
+    
+    // Busca os dados do Supabase
+    const { data: dbTeams } = await supabaseClient.from('teams').select('*');
+    if (dbTeams && dbTeams.length > 0) {
+        teams = dbTeams;
+    } else {
+        // Fallback caso o banco esteja vazio
+        teams = [{ id: 'all', name: 'Todas as Equipes' }];
+    }
+
+    const { data: dbUsers } = await supabaseClient.from('users').select('*');
+    if (dbUsers) users = dbUsers;
+
+    const { data: dbActs } = await supabaseClient.from('activities').select('*');
+    if (dbActs) activities = dbActs;
+
+    renderTabs();
+    renderGrid();
+};
+
+function saveGlobalMedia() {
+    globalMediaValue = document.getElementById('global-media').value;
+    localStorage.setItem('prod_global_media_v1', globalMediaValue);
+    showToast("Meta atualizada com sucesso!");
+}
+
+// --- FUNÇÕES DA CONFIGURAÇÃO DE API ---
+function abrirModalConfigApi() {
+    const inputSheets = document.getElementById('api-url-input');
+    const inputClockify = document.getElementById('api-clockify-url-input');
+    
+    inputSheets.value = apiPlanilhaUrl;
+    inputClockify.value = apiClockifyUrl;
+    
+    document.getElementById('modal-config-api').classList.remove('hidden');
+    setTimeout(() => inputSheets.focus(), 100);
+}
+
+function fecharModalConfigApi() {
+    document.getElementById('modal-config-api').classList.add('hidden');
+}
+
+function salvarConfigApi() {
+    apiPlanilhaUrl = document.getElementById('api-url-input').value.trim();
+    apiClockifyUrl = document.getElementById('api-clockify-url-input').value.trim();
+    
+    localStorage.setItem('prod_api_url_v1', apiPlanilhaUrl);
+    localStorage.setItem('prod_clockify_url_v1', apiClockifyUrl);
+    
+    fecharModalConfigApi();
+    showToast("Vínculos das APIs salvos com sucesso!");
+}
+
+// --- SISTEMA DE CONFIRMAÇÃO CUSTOMIZADO (UX PROFISSIONAL) ---
+let confirmActionCallback = null;
+function abrirConfirm(titulo, mensagem, callback) {
+    document.getElementById('confirm-title').innerText = titulo;
+    document.getElementById('confirm-message').innerText = mensagem;
+    confirmActionCallback = callback;
+    document.getElementById('modal-confirm').classList.remove('hidden');
+}
+function fecharConfirm() {
+    document.getElementById('modal-confirm').classList.add('hidden');
+    confirmActionCallback = null;
+}
+document.getElementById('btn-confirm-action').onclick = () => {
+    if (confirmActionCallback) confirmActionCallback();
+    fecharConfirm();
+};
+
+// --- GESTÃO DE EQUIPES (ABAS) ---
+function renderTabs() {
+    const list = document.getElementById('team-tabs-list');
+    list.innerHTML = '';
+    teams.forEach(t => {
+        const isActive = currentTab === t.id ? 'active' : '';
+        list.innerHTML += `
+            <div class="tab-item ${isActive}" onclick="selectTab('${t.id}')">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                    <i class="${t.id === 'all' ? 'ph-fill ph-users' : 'ph-fill ph-folder'}"></i>
+                    ${t.name}
+                </span>
+                ${t.id !== 'all' ? `<i class="ph-fill ph-trash btn-del-team" title="Excluir equipe" onclick="deleteTeam(event, '${t.id}', '${t.name}')"></i>` : ''}
+            </div>
+        `;
+    });
+}
+
+function selectTab(id) {
+    currentTab = id;
+    renderTabs();
+    renderGrid();
+    
+    const chartsContainer = document.getElementById('view-charts-container');
+    if (chartsContainer && !chartsContainer.classList.contains('hidden')) {
+        renderCharts();
+    }
+}
+
+function abrirModalAddTeam() {
+    const input = document.getElementById('new-team-input');
+    input.value = '';
+    document.getElementById('modal-add-team').classList.remove('hidden');
+    setTimeout(() => input.focus(), 100); 
+}
+
+function fecharModalAddTeam() {
+    document.getElementById('modal-add-team').classList.add('hidden');
+}
+
+async function confirmarAddTeam() {
+    const name = document.getElementById('new-team-input').value.trim();
+    if (name) {
+        const id = 'team_' + Date.now();
+        const newTeam = { id, name };
+
+        // Salva na nuvem
+        const { error } = await supabaseClient.from('teams').insert([newTeam]);
+        
+        if (error) {
+            console.error("🕵️ ERRO REVELADO DO SUPABASE:", error); // Essa é a linha mágica
+            return showToast("Erro ao salvar equipe no banco.", "error");
+        }
+        teams.push(newTeam);
+        renderTabs();
+        fecharModalAddTeam();
+        showToast(`Equipe "${name}" criada com sucesso!`);
+    } else {
+        showToast("Digite um nome válido para a equipe!", "error");
+    }
+}
+
+function deleteTeam(e, id, teamName) {
+    e.stopPropagation(); 
+    abrirConfirm(
+        "Excluir Equipe?", 
+        `Tem certeza que deseja apagar a equipe "${teamName}"? Os membros não serão apagados, apenas ficarão "Sem Equipe".`, 
+        async () => {
+            // Apaga da nuvem
+            const { error } = await supabaseClient.from('teams').delete().eq('id', id);
+            if (error) return showToast("Erro ao excluir equipe no banco.", "error");
+
+            teams = teams.filter(t => t.id !== id);
+            if (currentTab === id) currentTab = 'all';
+            
+            renderTabs();
+            renderGrid();
+            showToast("Equipe removida.");
+        }
+    );
+}
+
+// --- LÓGICA DE DATAS ---
+function isDateInPeriod(dateStr, period) {
+    if (period === 'all') return true;
+    
+    const parts = dateStr.split('/');
+    const actDate = new Date(parts[2], parts[1]-1, parts[0]);
+    actDate.setHours(0,0,0,0);
+    
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    if (period === 'today') return actDate.getTime() === today.getTime();
+    
+    if (period === 'yesterday') {
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+        return actDate.getTime() === yesterday.getTime();
+    }
+    
+    if (period === 'week') {
+        const dayOfWeek = today.getDay(); 
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - dayOfWeek);
+        return actDate >= startOfWeek;
+    }
+
+    if (period === 'last_week') {
+        const dayOfWeek = today.getDay();
+        const startOfThisWeek = new Date(today);
+        startOfThisWeek.setDate(today.getDate() - dayOfWeek);
+
+        const startOfLastWeek = new Date(startOfThisWeek);
+        startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+        const endOfLastWeek = new Date(startOfThisWeek);
+        endOfLastWeek.setDate(startOfThisWeek.getDate() - 1);
+
+        return actDate >= startOfLastWeek && actDate <= endOfLastWeek;
+    }
+    
+    if (period === 'month') {
+        return actDate.getMonth() === today.getMonth() && actDate.getFullYear() === today.getFullYear();
+    }
+    
+    return true;
+}
+
+// --- GESTÃO DE MEMBROS ---
+function renderGrid() {
+    const grid = document.getElementById('users-grid');
+    const term = document.getElementById('main-search').value.toLowerCase();
+    
+    const filterEl = document.getElementById('filter-period');
+    const filterPeriod = filterEl ? filterEl.value : 'week'; // Inicia na semana por padrão
+
+    grid.innerHTML = '';
+
+    let filtered = users;
+    if (currentTab !== 'all') filtered = filtered.filter(u => u.teamId === currentTab);
+    if (term) filtered = filtered.filter(u => u.name.toLowerCase().includes(term));
+
+    if (filtered.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <i class="ph-duotone ph-users-slash"></i>
+                <h3 style="margin: 0 0 10px 0;">Nenhum membro encontrado</h3>
+                <p style="margin: 0; font-size: 0.9rem;">Adicione pessoas usando o botão "Ajustes de Equipe" na barra lateral.</p>
+            </div>
+        `;
+    } else {
+        filtered.forEach(u => {
+            const uActs = activities.filter(a => a.userId === u.id && isDateInPeriod(a.date, filterPeriod));
+            const uQtd = uActs.reduce((acc, c) => acc + Number(c.qtd), 0);
+            const uMin = uActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
+
+            const teamName = teams.find(t => t.id === u.teamId)?.name || 'Sem Equipe';
+
+            grid.innerHTML += `
+                <div class="card-user" onclick="openUserModal(${u.id})">
+                    <div class="team-badge">${teamName}</div>
+                    <img src="${u.avatar}" loading="lazy">
+                    <h3>${u.name}</h3>
+                    <div class="tags" style="margin-top: 15px; display: flex; gap: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
+                        <span class="tag" style="font-size: 0.85rem; color: var(--muted); font-weight: 600; flex: 1;"><i class="ph-fill ph-clock" style="color: var(--accent)"></i> ${minToTime(uMin)}</span>
+                        <span class="tag" style="font-size: 0.85rem; color: var(--muted); font-weight: 600; flex: 1;"><i class="ph-fill ph-package" style="color: var(--success)"></i> ${uQtd} un.</span>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    document.getElementById('stats-members').innerText = filtered.length;
+}
+
+async function addUser() {
+    const name = document.getElementById('new-user-name').value.trim();
+    if (!name) {
+        return showToast("Digite um nome para o integrante.", "error");
+    }
+    
+    const newUser = {
+        id: Date.now(),
+        name: name,
+        teamId: currentTab === 'all' ? (teams[1]?.id || 'all') : currentTab,
+        avatar: `https://ui-avatars.com/api/?name=${name}&background=38bdf8&color=fff&size=512&font-size=0.33`
+    };
+
+    // Salva na nuvem
+    const { error } = await supabaseClient.from('users').insert([newUser]);
+    if (error) return showToast("Erro ao salvar integrante no banco.", "error");
+
+    users.push(newUser);
+    document.getElementById('new-user-name').value = '';
+    renderGrid();
+    renderAdminUsers();
+    showToast(`${name} adicionado(a) com sucesso!`);
+}
+
+// --- MODAL USUÁRIO E FETCH COM CALENDÁRIO ---
+function openUserModal(id) {
+    selectedUser = users.find(u => u.id === id);
+    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || 'Sem Equipe';
+    
+    document.getElementById('modal-user').classList.remove('hidden');
+    document.getElementById('m-name').innerText = selectedUser.name;
+    document.getElementById('m-avatar').src = selectedUser.avatar;
+    document.getElementById('m-team-label').innerText = teamName;
+    
+    document.getElementById('input-time').value = '';
+    document.getElementById('m-media').innerHTML = '0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span>';
+    
+    // Configura a data de hoje no calendário
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    document.getElementById('modal-date-picker').value = `${yyyy}-${mm}-${dd}`;
+    
+    updateHistory();
+    fetchDataForDate(); // Busca os dados do dia selecionado automaticamente
+}
+
+function fetchDataForDate() {
+    if (!selectedUser) return;
+
+    const selectedDateStr = document.getElementById('modal-date-picker').value;
+    if (!selectedDateStr) return;
+
+    const [sy, sm, sd] = selectedDateStr.split('-').map(Number);
+    const targetDate = new Date(sy, sm - 1, sd);
+
+    const inputQtd = document.getElementById('input-qtd');
+    const iconQtd = document.getElementById('qtd-icon');
+    const inputTime = document.getElementById('input-time');
+    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || '';
+    const isTerceirizado = teamName.toLowerCase().includes('terceirizad');
+
+    // --- PLANILHA (Sheets) ---
+    if (!apiPlanilhaUrl) {
+        inputQtd.type = "text";
+        inputQtd.value = "Sem Vínculo";
+        iconQtd.className = "ph-fill ph-warning-circle";
+        iconQtd.style.color = "var(--danger)";
+    } else {
+        inputQtd.type = "text"; 
+        inputQtd.value = "Sincronizando...";
+        iconQtd.className = "ph ph-spinner-gap loading-spinner";
+        iconQtd.style.color = "var(--accent)";
+        
+        fetch(`${apiPlanilhaUrl}?nome=${encodeURIComponent(selectedUser.name)}`)
+            .then(response => response.json())
+            .then(data => {
+                inputQtd.type = "number"; 
+                inputQtd.value = data.qtd || 0; 
+                iconQtd.className = "ph-fill ph-check-circle";
+                iconQtd.style.color = "var(--success)";
+                calcMedia();
+            })
+            .catch(error => {
+                inputQtd.type = "number";
+                inputQtd.value = 0;
+                iconQtd.className = "ph-fill ph-warning-circle";
+                iconQtd.style.color = "var(--danger)";
+            });
+    }
+
+    // --- CLOCKIFY (Respeitando a Data do Calendário) ---
+    inputTime.value = ""; 
+    
+    if (isTerceirizado) {
+        inputTime.value = "00:00";
+        inputTime.disabled = true;
+        inputTime.style.opacity = '0.5';
+        showToast("Modo Terceirizado: Tempo não exigido.");
+        return;
+    }
+
+    inputTime.disabled = false;
+    inputTime.style.opacity = '1';
+    
+    const apiKey = apiClockifyUrl;
+
+    if (apiKey && apiKey.length > 20) { 
+        inputTime.placeholder = "Buscando...";
+        
+        fetch('https://api.clockify.me/api/v1/workspaces', {
+            method: 'GET',
+            headers: { 'X-Api-Key': apiKey }
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("Chave inválida");
+            return res.json();
+        })
+        .then(workspaces => {
+            const workspaceId = workspaces[0].id; 
+            
+            return fetch(`https://api.clockify.me/api/v1/workspaces/${workspaceId}/users`, {
+                headers: { 'X-Api-Key': apiKey }
+            })
+            .then(res => res.json())
+            .then(clockifyUsers => {
+                const clockifyUser = clockifyUsers.find(u => u.name.toLowerCase() === selectedUser.name.toLowerCase());
+
+                if (!clockifyUser) {
+                    showToast(`"${selectedUser.name}" não existe no Clockify.`, 'error');
+                    inputTime.placeholder = "";
+                    return;
+                }
+
+                return fetch(`https://api.clockify.me/api/v1/workspaces/${workspaceId}/user/${clockifyUser.id}/time-entries?hydrated=true`, {
+                    headers: { 'X-Api-Key': apiKey }
+                })
+                .then(res => res.json())
+                .then(entries => {
+                    let totalMinutos = 0;
+
+                    entries.forEach(entry => {
+                        const dataDaTarefa = new Date(entry.timeInterval.start);
+                        
+                        // Filtra horas baseando-se no dia escolhido no calendário
+                        const isTargetDate = dataDaTarefa.getDate() === targetDate.getDate() &&
+                                             dataDaTarefa.getMonth() === targetDate.getMonth() &&
+                                             dataDaTarefa.getFullYear() === targetDate.getFullYear();
+                        
+                        const textoDaTarefa = JSON.stringify(entry).toLowerCase();
+                        const isValidacao = textoDaTarefa.includes("valida");
+                        
+                        if (isTargetDate && entry.timeInterval.duration && isValidacao) {
+                            const matchHours = entry.timeInterval.duration.match(/(\d+)H/);
+                            const matchMinutes = entry.timeInterval.duration.match(/(\d+)M/);
+
+                            const hours = matchHours ? parseInt(matchHours[1]) : 0;
+                            const minutes = matchMinutes ? parseInt(matchMinutes[1]) : 0;
+
+                            totalMinutos += (hours * 60) + minutes;
+                        }
+                    });
+
+                    if (totalMinutos > 0) {
+                        const h = String(Math.floor(totalMinutos / 60)).padStart(2, '0');
+                        const m = String(totalMinutos % 60).padStart(2, '0');
+                        
+                        inputTime.value = `${h}:${m}`;
+                        calcMedia(); 
+                        showToast(`Tempo (${h}h${m}) do dia ${targetDate.toLocaleDateString('pt-BR')} puxado!`);
+                    } else {
+                        showToast(`Sem tarefas neste dia.`, 'error');
+                    }
+                    inputTime.placeholder = "";
+                });
+            });
+        })
+        .catch(err => {
+            console.error(err);
+            inputTime.placeholder = "";
+        });
+    }
+}
+
+// --- SALVAR ATIVIDADE COM DATA ESCOLHIDA ---
+async function saveAct() {
+    const time = document.getElementById('input-time').value;
+    const qtd = Number(document.getElementById('input-qtd').value);
+    const datePickerVal = document.getElementById('modal-date-picker').value;
+
+    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || '';
+    const isTerceirizado = teamName.toLowerCase().includes('terceirizad');
+
+    if(!time && !isTerceirizado) {
+        return showToast("Por favor, preencha o tempo gasto!", "error");
+    }
+
+    // Formata a data do calendário
+    const [y, m, d] = datePickerVal.split('-');
+    const formattedDate = `${d}/${m}/${y}`;
+
+    const newAct = {
+        id: Date.now(),
+        userId: selectedUser.id,
+        qtd: qtd,
+        time: isTerceirizado ? '00:00' : time, 
+        date: formattedDate 
+    };
+
+    // Salva na nuvem
+    const { error } = await supabaseClient.from('activities').insert([newAct]);
+    if (error) return showToast("Erro ao salvar histórico.", "error");
+
+    activities.push(newAct);
+
+    updateHistory();
+    renderGrid();
+    document.getElementById('input-time').value = isTerceirizado ? '00:00' : ''; 
+    showToast(`Produção salva para ${formattedDate}!`);
+}
+
+function deleteAct(actId) {
+    abrirConfirm("Apagar Registro", "Deseja remover esta produção do histórico do usuário? Isso afetará os cálculos totais.", async () => {
+        // Apaga da nuvem
+        const { error } = await supabaseClient.from('activities').delete().eq('id', actId);
+        if (error) return showToast("Erro ao apagar registro.", "error");
+
+        activities = activities.filter(a => a.id !== actId);
+        updateHistory();
+        renderGrid();
+        showToast("Registro apagado.");
+    });
+}
+
+// --- AUXILIARES ---
+function timeToMin(t) { 
+    if(!t) return 0; 
+    const p = t.split(':').map(Number); 
+    return (p[0] * 60) + p[1]; 
+}
+
+function minToTime(m) { 
+    if(m === 0) return "00h00"; 
+    const h = Math.floor(m / 60); 
+    const mn = m % 60; 
+    return `${String(h).padStart(2,'0')}h${String(mn).padStart(2,'0')}`; 
+}
+
+function calcMedia() {
+    const t = document.getElementById('input-time').value;
+    const q = Number(document.getElementById('input-qtd').value);
+    const mediaBox = document.getElementById('m-media');
+    
+    if(t) {
+        const p = t.split(':').map(Number);
+        const dec = p[0] + (p[1]/60);
+        if (dec > 0) {
+            const result = (q/dec).toFixed(2);
+            mediaBox.innerHTML = `${result} <span style="font-size: 1rem; color: var(--muted);">/h</span>`;
+            mediaBox.style.color = "var(--success)";
+        } else {
+            mediaBox.innerHTML = `0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span>`;
+        }
+    }
+}
+
+function updateHistory() {
+    const hist = document.getElementById('m-history');
+    const uActs = activities.filter(a => a.userId === selectedUser.id);
+    
+    if (uActs.length === 0) {
+        hist.innerHTML = `
+            <div style="color: var(--muted); font-size: 0.85rem; text-align: center; padding: 20px; background: rgba(0,0,0,0.1); border-radius: 10px; border: 1px dashed var(--border);">
+                Nenhum registro no histórico.
+            </div>`;
+        return;
+    }
+
+    hist.innerHTML = uActs.reverse().map(a => `
+        <div style="background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; transition: 0.2s; border: 1px solid transparent;" onmouseover="this.style.borderColor='var(--border)'" onmouseout="this.style.borderColor='transparent'">
+            <span style="display: flex; gap: 15px;">
+                <b style="color: var(--text);">${a.date}</b> 
+                <span style="color: var(--muted);"><i class="ph-fill ph-clock"></i> ${a.time}</span>
+            </span>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="background: rgba(16, 185, 129, 0.1); color: var(--success); padding: 4px 10px; border-radius: 20px; font-weight: bold; font-size: 0.8rem;">${a.qtd} un.</span>
+                <button onclick="deleteAct(${a.id})" style="background: none; border: none; color: var(--danger); cursor: pointer; padding: 5px; border-radius: 5px; display: flex; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.1)'" onmouseout="this.style.background='none'" title="Apagar registro">
+                    <i class="ph-fill ph-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showToast(msg, type = 'success') {
+    const c = document.getElementById('toasts');
+    const t = document.createElement('div');
+    t.className = 'toast';
+    if(type === 'error') {
+        t.style.borderLeftColor = 'var(--danger)';
+        t.innerHTML = `<i class="ph-fill ph-warning-circle" style="color: var(--danger); font-size: 1.2rem;"></i> ${msg}`;
+    } else {
+        t.innerHTML = `<i class="ph-fill ph-check-circle" style="color: var(--success); font-size: 1.2rem;"></i> ${msg}`;
+    }
+    c.appendChild(t);
+    setTimeout(() => {
+        t.style.animation = 'slideIn 0.4s reverse forwards';
+        setTimeout(() => t.remove(), 400);
+    }, 3000);
+}
+
+function abrirAdmin() { 
+    document.getElementById('modal-admin').classList.remove('hidden'); 
+    renderAdminUsers();
+}
+function fecharAdmin() { document.getElementById('modal-admin').classList.add('hidden'); }
+function fecharModal() { document.getElementById('modal-user').classList.add('hidden'); }
+
+function renderAdminUsers() {
+    const list = document.getElementById('admin-users-list');
+    if (users.length === 0) {
+        list.innerHTML = `<p style="color: var(--muted); text-align: center; margin-top: 20px;">Não há membros cadastrados ainda.</p>`;
+        return;
+    }
+    list.innerHTML = users.map(u => {
+        const teamName = teams.find(t => t.id === u.teamId)?.name || 'Sem Equipe';
+        return `
+        <div style="display: flex; justify-content: space-between; align-items:center; padding: 12px; border-bottom: 1px solid var(--border); transition: 0.2s;">
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 0.95rem; font-weight: 600;">${u.name}</span>
+                <span style="font-size: 0.75rem; color: var(--accent);">${teamName}</span>
+            </div>
+            <button onclick="delUser(${u.id}, '${u.name}')" style="background:none; border:none; color: var(--muted); cursor:pointer; padding: 8px; border-radius: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--danger)'; this.style.background='rgba(239, 68, 68, 0.1)';" onmouseout="this.style.color='var(--muted)'; this.style.background='none';">
+                <i class="ph-fill ph-trash" style="font-size: 1.1rem;"></i>
+            </button>
+        </div>
+    `}).join('');
+}
+
+function delUser(id, userName) {
+    abrirConfirm("Excluir Membro", `Tem certeza que deseja remover permanentemente o(a) membro "${userName}"? Os registros antigos serão mantidos no banco de dados local para auditoria.`, async () => {
+        // Apaga da nuvem
+        const { error } = await supabaseClient.from('users').delete().eq('id', id);
+        if (error) return showToast("Erro ao excluir membro.", "error");
+
+        users = users.filter(u => u.id !== id);
+        renderGrid();
+        renderAdminUsers();
+        showToast("Membro removido com sucesso!");
+    });
+}
+
+function toggleTheme() {
+    const body = document.body;
+    const themeIcon = document.getElementById('theme-icon');
+    
+    body.classList.toggle('dark-mode');
+    
+    if (body.classList.contains('dark-mode')) {
+        themeIcon.classList.remove('ph-moon');
+        themeIcon.classList.add('ph-sun');
+        localStorage.setItem('theme', 'dark');
+    } else {
+        themeIcon.classList.remove('ph-sun');
+        themeIcon.classList.add('ph-moon');
+        localStorage.setItem('theme', 'light');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const savedTheme = localStorage.getItem('theme');
+    const themeIcon = document.getElementById('theme-icon');
+    
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        if (themeIcon) {
+            themeIcon.classList.remove('ph-moon');
+            themeIcon.classList.add('ph-sun');
+        }
+    }
+});
+
+// ==========================================
+// ABA DE GRÁFICOS (MÚLTIPLOS E SEPARADOS)
+// ==========================================
+function switchView(view) {
+    const gridContainer = document.getElementById('view-grid-container');
+    const chartsContainer = document.getElementById('view-charts-container');
+    const btnGrid = document.getElementById('btn-view-grid');
+    const btnCharts = document.getElementById('btn-view-charts');
+
+    if (view === 'grid') {
+        gridContainer.classList.remove('hidden');
+        chartsContainer.classList.add('hidden');
+        
+        btnGrid.classList.remove('outline');
+        btnGrid.style.border = 'none';
+        
+        btnCharts.classList.add('outline');
+        btnCharts.style.border = 'none';
+    } else {
+        gridContainer.classList.add('hidden');
+        chartsContainer.classList.remove('hidden');
+        
+        btnCharts.classList.remove('outline');
+        btnCharts.style.border = 'none';
+        
+        btnGrid.classList.add('outline');
+        btnGrid.style.border = 'none';
+        
+        renderCharts();
+    }
+}
+
+function limparFiltroData() {
+    document.getElementById('chart-date-start').value = '';
+    document.getElementById('chart-date-end').value = '';
+    document.getElementById('chart-search').value = ''; 
+    renderCharts();
+    showToast("Filtros limpos!");
+}
+
+function renderCharts() {
+    // 1. Destruir gráficos anteriores
+    chartInstances.forEach(chart => chart.destroy());
+    chartInstances = [];
+
+    const mode = document.getElementById('chart-mode').value;
+    const startInput = document.getElementById('chart-date-start').value;
+    const endInput = document.getElementById('chart-date-end').value;
+    const searchTerm = document.getElementById('chart-search').value.toLowerCase();
+
+    // 2. Localizar e preparar o container que receberá os gráficos
+    let chartContainer = document.getElementById('multi-charts-container');
+    if (!chartContainer) {
+        // Usa o pai do canvas original como container dinâmico
+        const originalCanvas = document.getElementById('teamChart');
+        if (originalCanvas) {
+            chartContainer = originalCanvas.parentElement;
+            chartContainer.id = 'multi-charts-container'; 
+        }
+    }
+    if (!chartContainer) return;
+    
+    // Limpa o container para recriar
+    chartContainer.innerHTML = ''; 
+    chartContainer.style.display = 'grid';
+    chartContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(400px, 1fr))';
+    chartContainer.style.gap = '20px';
+
+    // 3. Filtrar Atividades
+    let filteredActs = activities;
+    
+    let startTs = 0;
+    let endTs = Infinity;
+    
+    if (startInput) {
+        // Quebra a data 'YYYY-MM-DD' em números para evitar conflitos de fuso/navegador
+        const [y, m, d] = startInput.split('-').map(Number);
+        startTs = new Date(y, m - 1, d, 0, 0, 0).getTime();
+    }
+    
+    if (endInput) {
+        const [y, m, d] = endInput.split('-').map(Number);
+        endTs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+    }
+
+    if (startInput || endInput) {
+        // Filtra comparando o timestamp exato do momento em que foi salvo (a.id) com o período
+        filteredActs = activities.filter(a => a.id >= startTs && a.id <= endTs);
+    }
+
+    // Ordena as atividades de forma cronológica (do mais antigo pro mais novo)
+    filteredActs.sort((a, b) => a.id - b.id);
+
+    // Identifica Entidades (Equipes ou Usuários) que devem ter um gráfico
+    let entitiesToRender = [];
+
+    if (mode === 'teams') {
+        let displayTeams = teams.filter(t => t.id !== 'all');
+        if (searchTerm) displayTeams = displayTeams.filter(t => t.name.toLowerCase().includes(searchTerm));
+        
+        displayTeams.forEach(t => {
+            const tUsers = users.filter(u => u.teamId === t.id);
+            const tActs = filteredActs.filter(a => tUsers.some(u => u.id === a.userId));
+            entitiesToRender.push({ name: `Equipe: ${t.name}`, acts: tActs });
+        });
+    } else {
+        let teamUsers = currentTab === 'all' ? users : users.filter(u => u.teamId === currentTab);
+        if (searchTerm) teamUsers = teamUsers.filter(u => u.name.toLowerCase().includes(searchTerm));
+        
+        teamUsers.forEach(u => {
+            const uActs = filteredActs.filter(a => a.userId === u.id);
+            entitiesToRender.push({ name: u.name, acts: uActs });
+        });
+    }
+
+    // Configurações Visuais 
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    const textColor = isDarkMode ? '#94a3b8' : '#64748b'; 
+    const gridColor = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    const lineColor = mode === 'teams' ? '#10b981' : '#38bdf8'; 
+    const fillColor = mode === 'teams' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)';
+
+    // Função auxiliar: Agrupar por data para o eixo X do gráfico
+    function getTrendData(acts) {
+        const grouped = {};
+        acts.forEach(a => {
+            const d = a.date; 
+            if(!grouped[d]) grouped[d] = { qtd: 0, min: 0 };
+            grouped[d].qtd += a.qtd;
+            grouped[d].min += timeToMin(a.time);
+        });
+        
+        const labels = [];
+        const data = [];
+        Object.keys(grouped).forEach(date => {
+            const totalQtd = grouped[date].qtd;
+            const totalHours = grouped[date].min / 60;
+            const media = totalHours > 0 ? (totalQtd / totalHours).toFixed(2) : 0;
+            labels.push(date);
+            data.push(parseFloat(media));
+        });
+        return { labels, data };
+    }
+
+    let hasRenderedAny = false;
+
+    // 4. Cria e renderiza cada gráfico separadamente
+    entitiesToRender.forEach((entity, index) => {
+        if (entity.acts.length === 0) return; // Pula se não tiver nenhum apontamento
+        
+        hasRenderedAny = true;
+        const trend = getTrendData(entity.acts);
+        
+        // Criação da "Caixa" (Card) para o Gráfico
+        const wrapper = document.createElement('div');
+        wrapper.style.padding = '20px';
+        wrapper.style.background = isDarkMode ? 'var(--bg)' : '#fff';
+        wrapper.style.border = '1px solid var(--border)';
+        wrapper.style.borderRadius = '12px';
+        wrapper.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05)';
+
+        // Título do Card
+        const title = document.createElement('h3');
+        title.innerHTML = `<i class="ph-fill ${mode === 'teams' ? 'ph-users' : 'ph-user'}"></i> ${entity.name}`;
+        title.style.marginBottom = '20px';
+        title.style.color = 'var(--text)';
+        title.style.fontSize = '1.1rem';
+        title.style.display = 'flex';
+        title.style.alignItems = 'center';
+        title.style.gap = '8px';
+        wrapper.appendChild(title);
+
+        // Canvas isolado
+        const canvas = document.createElement('canvas');
+        canvas.id = `chart_${index}`;
+        wrapper.appendChild(canvas);
+        
+        chartContainer.appendChild(wrapper);
+
+        // Inicialização do Chart.js para este canvas
+        const ctx = canvas.getContext('2d');
+        const newChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: trend.labels,
+                datasets: [{
+                    label: 'Média Diária',
+                    data: trend.data,
+                    backgroundColor: fillColor, 
+                    borderColor: lineColor,
+                    borderWidth: 2,
+                    pointBackgroundColor: lineColor,
+                    pointBorderColor: isDarkMode ? '#1e293b' : '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }, 
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        titleFont: { family: 'Inter' },
+                        bodyFont: { family: 'Inter', size: 14 },
+                        callbacks: {
+                            label: function(context) { return context.raw + ' un/h'; }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: textColor, font: { family: 'Inter' } },
+                        grid: { color: gridColor }
+                    },
+                    x: {
+                        ticks: { color: textColor, font: { family: 'Inter', weight: 600 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+
+        chartInstances.push(newChart);
+    });
+
+    if (!hasRenderedAny) {
+        chartContainer.style.display = 'block';
+        chartContainer.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: var(--muted);">
+                <i class="ph-duotone ph-chart-line-down" style="font-size: 3rem; margin-bottom: 15px;"></i>
+                <p>Nenhum dado de produção encontrado para gerar os gráficos.</p>
+            </div>
+        `;
+    }
+}
