@@ -1,893 +1,712 @@
-// --- CONEXÃO COM O BANCO DE DADOS (SUPABASE) ---
-// Cole suas chaves geradas no site do Supabase aqui embaixo:
+// ==========================================
+// 1. CONFIGURAÇÃO E SUPABASE
+// ==========================================
 const supabaseUrl = 'https://srnpjfzrtfxjnxphwwgt.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNybnBqZnpydGZ4am54cGh3d2d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4OTQ5MzEsImV4cCI6MjA5NTQ3MDkzMX0.NH43sKbTCwjQpa75c5UFXvc5dr2KSQtqXbRTLzFnVMU';
-// MUDAMOS O NOME AQUI PARA NÃO DAR CONFLITO COM O HTML
 const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-// --- BANCO DE DADOS (AGORA NA NUVEM) ---
-let teams = [];
-let users = [];
-let activities = [];
-
-// VARIÁVEIS DAS URLs DAS APIs E CONFIGURAÇÕES (Mantidas locais por segurança)
-let globalMediaValue = localStorage.getItem('prod_global_media_v1') || 0;
-let apiPlanilhaUrl = localStorage.getItem('prod_api_url_v1') || "";
-let apiClockifyUrl = localStorage.getItem('prod_clockify_url_v1') || ""; 
-
-let currentTab = 'all';
-let selectedUser = null;
-let chartInstances = []; // Guarda múltiplos gráficos
-
-// Transformado em async para aguardar o banco de dados carregar
-window.onload = async () => {
-    document.getElementById('global-media').value = globalMediaValue;
-    
-    // Busca os dados do Supabase
-    const { data: dbTeams } = await supabaseClient.from('teams').select('*');
-    if (dbTeams && dbTeams.length > 0) {
-        teams = dbTeams;
-    } else {
-        // Fallback caso o banco esteja vazio
-        teams = [{ id: 'all', name: 'Todas as Equipes' }];
-    }
-
-    const { data: dbUsers } = await supabaseClient.from('users').select('*');
-    if (dbUsers) users = dbUsers;
-
-    const { data: dbActs } = await supabaseClient.from('activities').select('*');
-    if (dbActs) activities = dbActs;
-
-    renderTabs();
-    renderGrid();
-};
-
-function saveGlobalMedia() {
-    globalMediaValue = document.getElementById('global-media').value;
-    localStorage.setItem('prod_global_media_v1', globalMediaValue);
-    showToast("Meta atualizada com sucesso!");
-}
-
-// --- FUNÇÕES DA CONFIGURAÇÃO DE API ---
-function abrirModalConfigApi() {
-    const inputSheets = document.getElementById('api-url-input');
-    const inputClockify = document.getElementById('api-clockify-url-input');
-    
-    inputSheets.value = apiPlanilhaUrl;
-    inputClockify.value = apiClockifyUrl;
-    
-    document.getElementById('modal-config-api').classList.remove('hidden');
-    setTimeout(() => inputSheets.focus(), 100);
-}
-
-function fecharModalConfigApi() {
-    document.getElementById('modal-config-api').classList.add('hidden');
-}
-
-function salvarConfigApi() {
-    apiPlanilhaUrl = document.getElementById('api-url-input').value.trim();
-    apiClockifyUrl = document.getElementById('api-clockify-url-input').value.trim();
-    
-    localStorage.setItem('prod_api_url_v1', apiPlanilhaUrl);
-    localStorage.setItem('prod_clockify_url_v1', apiClockifyUrl);
-    
-    fecharModalConfigApi();
-    showToast("Vínculos das APIs salvos com sucesso!");
-}
-
-// --- SISTEMA DE CONFIRMAÇÃO CUSTOMIZADO (UX PROFISSIONAL) ---
-let confirmActionCallback = null;
-function abrirConfirm(titulo, mensagem, callback) {
-    document.getElementById('confirm-title').innerText = titulo;
-    document.getElementById('confirm-message').innerText = mensagem;
-    confirmActionCallback = callback;
-    document.getElementById('modal-confirm').classList.remove('hidden');
-}
-function fecharConfirm() {
-    document.getElementById('modal-confirm').classList.add('hidden');
-    confirmActionCallback = null;
-}
-document.getElementById('btn-confirm-action').onclick = () => {
-    if (confirmActionCallback) confirmActionCallback();
-    fecharConfirm();
-};
-
-// --- GESTÃO DE EQUIPES (ABAS) ---
-function renderTabs() {
-    const list = document.getElementById('team-tabs-list');
-    list.innerHTML = '';
-    teams.forEach(t => {
-        const isActive = currentTab === t.id ? 'active' : '';
-        list.innerHTML += `
-            <div class="tab-item ${isActive}" onclick="selectTab('${t.id}')">
-                <span style="display: flex; align-items: center; gap: 8px;">
-                    <i class="${t.id === 'all' ? 'ph-fill ph-users' : 'ph-fill ph-folder'}"></i>
-                    ${t.name}
-                </span>
-                ${t.id !== 'all' ? `<i class="ph-fill ph-trash btn-del-team" title="Excluir equipe" onclick="deleteTeam(event, '${t.id}', '${t.name}')"></i>` : ''}
-            </div>
-        `;
-    });
-}
-
-function selectTab(id) {
-    currentTab = id;
-    renderTabs();
-    renderGrid();
-    
-    const chartsContainer = document.getElementById('view-charts-container');
-    if (chartsContainer && !chartsContainer.classList.contains('hidden')) {
-        renderCharts();
-    }
-}
-
-function abrirModalAddTeam() {
-    const input = document.getElementById('new-team-input');
-    input.value = '';
-    document.getElementById('modal-add-team').classList.remove('hidden');
-    setTimeout(() => input.focus(), 100); 
-}
-
-function fecharModalAddTeam() {
-    document.getElementById('modal-add-team').classList.add('hidden');
-}
-
-async function confirmarAddTeam() {
-    const name = document.getElementById('new-team-input').value.trim();
-    if (name) {
-        const id = 'team_' + Date.now();
-        const newTeam = { id, name };
-
-        // Salva na nuvem
-        const { error } = await supabaseClient.from('teams').insert([newTeam]);
-        
-        if (error) {
-            console.error("🕵️ ERRO REVELADO DO SUPABASE:", error); // Essa é a linha mágica
-            return showToast("Erro ao salvar equipe no banco.", "error");
-        }
-        teams.push(newTeam);
-        renderTabs();
-        fecharModalAddTeam();
-        showToast(`Equipe "${name}" criada com sucesso!`);
-    } else {
-        showToast("Digite um nome válido para a equipe!", "error");
-    }
-}
-
-function deleteTeam(e, id, teamName) {
-    e.stopPropagation(); 
-    abrirConfirm(
-        "Excluir Equipe?", 
-        `Tem certeza que deseja apagar a equipe "${teamName}"? Os membros não serão apagados, apenas ficarão "Sem Equipe".`, 
-        async () => {
-            // Apaga da nuvem
-            const { error } = await supabaseClient.from('teams').delete().eq('id', id);
-            if (error) return showToast("Erro ao excluir equipe no banco.", "error");
-
-            teams = teams.filter(t => t.id !== id);
-            if (currentTab === id) currentTab = 'all';
-            
-            renderTabs();
-            renderGrid();
-            showToast("Equipe removida.");
-        }
-    );
-}
-
-// --- LÓGICA DE DATAS ---
-function isDateInPeriod(dateStr, period) {
-    if (period === 'all') return true;
-    
-    const parts = dateStr.split('/');
-    const actDate = new Date(parts[2], parts[1]-1, parts[0]);
-    actDate.setHours(0,0,0,0);
-    
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    if (period === 'today') return actDate.getTime() === today.getTime();
-    
-    if (period === 'yesterday') {
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-        return actDate.getTime() === yesterday.getTime();
-    }
-    
-    if (period === 'week') {
-        const dayOfWeek = today.getDay(); 
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - dayOfWeek);
-        return actDate >= startOfWeek;
-    }
-
-    if (period === 'last_week') {
-        const dayOfWeek = today.getDay();
-        const startOfThisWeek = new Date(today);
-        startOfThisWeek.setDate(today.getDate() - dayOfWeek);
-
-        const startOfLastWeek = new Date(startOfThisWeek);
-        startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
-
-        const endOfLastWeek = new Date(startOfThisWeek);
-        endOfLastWeek.setDate(startOfThisWeek.getDate() - 1);
-
-        return actDate >= startOfLastWeek && actDate <= endOfLastWeek;
-    }
-    
-    if (period === 'month') {
-        return actDate.getMonth() === today.getMonth() && actDate.getFullYear() === today.getFullYear();
-    }
-    
-    return true;
-}
-
-// --- GESTÃO DE MEMBROS ---
-function renderGrid() {
-    const grid = document.getElementById('users-grid');
-    const term = document.getElementById('main-search').value.toLowerCase();
-    
-    const filterEl = document.getElementById('filter-period');
-    const filterPeriod = filterEl ? filterEl.value : 'week'; // Inicia na semana por padrão
-
-    grid.innerHTML = '';
-
-    let filtered = users;
-    if (currentTab !== 'all') filtered = filtered.filter(u => u.teamId === currentTab);
-    if (term) filtered = filtered.filter(u => u.name.toLowerCase().includes(term));
-
-    if (filtered.length === 0) {
-        grid.innerHTML = `
-            <div class="empty-state">
-                <i class="ph-duotone ph-users-slash"></i>
-                <h3 style="margin: 0 0 10px 0;">Nenhum membro encontrado</h3>
-                <p style="margin: 0; font-size: 0.9rem;">Adicione pessoas usando o botão "Ajustes de Equipe" na barra lateral.</p>
-            </div>
-        `;
-    } else {
-        filtered.forEach(u => {
-            const uActs = activities.filter(a => a.userId === u.id && isDateInPeriod(a.date, filterPeriod));
-            const uQtd = uActs.reduce((acc, c) => acc + Number(c.qtd), 0);
-            const uMin = uActs.reduce((acc, c) => acc + timeToMin(c.time), 0);
-
-            const teamName = teams.find(t => t.id === u.teamId)?.name || 'Sem Equipe';
-
-            grid.innerHTML += `
-                <div class="card-user" onclick="openUserModal(${u.id})">
-                    <div class="team-badge">${teamName}</div>
-                    <img src="${u.avatar}" loading="lazy">
-                    <h3>${u.name}</h3>
-                    <div class="tags" style="margin-top: 15px; display: flex; gap: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
-                        <span class="tag" style="font-size: 0.85rem; color: var(--muted); font-weight: 600; flex: 1;"><i class="ph-fill ph-clock" style="color: var(--accent)"></i> ${minToTime(uMin)}</span>
-                        <span class="tag" style="font-size: 0.85rem; color: var(--muted); font-weight: 600; flex: 1;"><i class="ph-fill ph-package" style="color: var(--success)"></i> ${uQtd} un.</span>
-                    </div>
-                </div>
-            `;
-        });
-    }
-
-    document.getElementById('stats-members').innerText = filtered.length;
-}
-
-async function addUser() {
-    const name = document.getElementById('new-user-name').value.trim();
-    if (!name) {
-        return showToast("Digite um nome para o integrante.", "error");
-    }
-    
-    const newUser = {
-        id: Date.now(),
-        name: name,
-        teamId: currentTab === 'all' ? (teams[1]?.id || 'all') : currentTab,
-        avatar: `https://ui-avatars.com/api/?name=${name}&background=38bdf8&color=fff&size=512&font-size=0.33`
-    };
-
-    // Salva na nuvem
-    const { error } = await supabaseClient.from('users').insert([newUser]);
-    if (error) return showToast("Erro ao salvar integrante no banco.", "error");
-
-    users.push(newUser);
-    document.getElementById('new-user-name').value = '';
-    renderGrid();
-    renderAdminUsers();
-    showToast(`${name} adicionado(a) com sucesso!`);
-}
-
-// --- MODAL USUÁRIO E FETCH COM CALENDÁRIO ---
-function openUserModal(id) {
-    selectedUser = users.find(u => u.id === id);
-    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || 'Sem Equipe';
-    
-    document.getElementById('modal-user').classList.remove('hidden');
-    document.getElementById('m-name').innerText = selectedUser.name;
-    document.getElementById('m-avatar').src = selectedUser.avatar;
-    document.getElementById('m-team-label').innerText = teamName;
-    
-    document.getElementById('input-time').value = '';
-    document.getElementById('m-media').innerHTML = '0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span>';
-    
-    // Configura a data de hoje no calendário
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    document.getElementById('modal-date-picker').value = `${yyyy}-${mm}-${dd}`;
-    
-    updateHistory();
-    fetchDataForDate(); // Busca os dados do dia selecionado automaticamente
-}
-
-function fetchDataForDate() {
-    if (!selectedUser) return;
-
-    const selectedDateStr = document.getElementById('modal-date-picker').value;
-    if (!selectedDateStr) return;
-
-    const [sy, sm, sd] = selectedDateStr.split('-').map(Number);
-    const targetDate = new Date(sy, sm - 1, sd);
-
-    const inputQtd = document.getElementById('input-qtd');
-    const iconQtd = document.getElementById('qtd-icon');
-    const inputTime = document.getElementById('input-time');
-    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || '';
-    const isTerceirizado = teamName.toLowerCase().includes('terceirizad');
-
-    // --- PLANILHA (Sheets) ---
-    if (!apiPlanilhaUrl) {
-        inputQtd.type = "text";
-        inputQtd.value = "Sem Vínculo";
-        iconQtd.className = "ph-fill ph-warning-circle";
-        iconQtd.style.color = "var(--danger)";
-    } else {
-        inputQtd.type = "text"; 
-        inputQtd.value = "Sincronizando...";
-        iconQtd.className = "ph ph-spinner-gap loading-spinner";
-        iconQtd.style.color = "var(--accent)";
-        
-        fetch(`${apiPlanilhaUrl}?nome=${encodeURIComponent(selectedUser.name)}`)
-            .then(response => response.json())
-            .then(data => {
-                inputQtd.type = "number"; 
-                inputQtd.value = data.qtd || 0; 
-                iconQtd.className = "ph-fill ph-check-circle";
-                iconQtd.style.color = "var(--success)";
-                calcMedia();
-            })
-            .catch(error => {
-                inputQtd.type = "number";
-                inputQtd.value = 0;
-                iconQtd.className = "ph-fill ph-warning-circle";
-                iconQtd.style.color = "var(--danger)";
-            });
-    }
-
-    // --- CLOCKIFY (Respeitando a Data do Calendário) ---
-    inputTime.value = ""; 
-    
-    if (isTerceirizado) {
-        inputTime.value = "00:00";
-        inputTime.disabled = true;
-        inputTime.style.opacity = '0.5';
-        showToast("Modo Terceirizado: Tempo não exigido.");
-        return;
-    }
-
-    inputTime.disabled = false;
-    inputTime.style.opacity = '1';
-    
-    const apiKey = apiClockifyUrl;
-
-    if (apiKey && apiKey.length > 20) { 
-        inputTime.placeholder = "Buscando...";
-        
-        fetch('https://api.clockify.me/api/v1/workspaces', {
-            method: 'GET',
-            headers: { 'X-Api-Key': apiKey }
-        })
-        .then(res => {
-            if (!res.ok) throw new Error("Chave inválida");
-            return res.json();
-        })
-        .then(workspaces => {
-            const workspaceId = workspaces[0].id; 
-            
-            return fetch(`https://api.clockify.me/api/v1/workspaces/${workspaceId}/users`, {
-                headers: { 'X-Api-Key': apiKey }
-            })
-            .then(res => res.json())
-            .then(clockifyUsers => {
-                const clockifyUser = clockifyUsers.find(u => u.name.toLowerCase() === selectedUser.name.toLowerCase());
-
-                if (!clockifyUser) {
-                    showToast(`"${selectedUser.name}" não existe no Clockify.`, 'error');
-                    inputTime.placeholder = "";
-                    return;
-                }
-
-                return fetch(`https://api.clockify.me/api/v1/workspaces/${workspaceId}/user/${clockifyUser.id}/time-entries?hydrated=true`, {
-                    headers: { 'X-Api-Key': apiKey }
-                })
-                .then(res => res.json())
-                .then(entries => {
-                    let totalMinutos = 0;
-
-                    entries.forEach(entry => {
-                        const dataDaTarefa = new Date(entry.timeInterval.start);
-                        
-                        // Filtra horas baseando-se no dia escolhido no calendário
-                        const isTargetDate = dataDaTarefa.getDate() === targetDate.getDate() &&
-                                             dataDaTarefa.getMonth() === targetDate.getMonth() &&
-                                             dataDaTarefa.getFullYear() === targetDate.getFullYear();
-                        
-                        const textoDaTarefa = JSON.stringify(entry).toLowerCase();
-                        const isValidacao = textoDaTarefa.includes("valida");
-                        
-                        if (isTargetDate && entry.timeInterval.duration && isValidacao) {
-                            const matchHours = entry.timeInterval.duration.match(/(\d+)H/);
-                            const matchMinutes = entry.timeInterval.duration.match(/(\d+)M/);
-
-                            const hours = matchHours ? parseInt(matchHours[1]) : 0;
-                            const minutes = matchMinutes ? parseInt(matchMinutes[1]) : 0;
-
-                            totalMinutos += (hours * 60) + minutes;
-                        }
-                    });
-
-                    if (totalMinutos > 0) {
-                        const h = String(Math.floor(totalMinutos / 60)).padStart(2, '0');
-                        const m = String(totalMinutos % 60).padStart(2, '0');
-                        
-                        inputTime.value = `${h}:${m}`;
-                        calcMedia(); 
-                        showToast(`Tempo (${h}h${m}) do dia ${targetDate.toLocaleDateString('pt-BR')} puxado!`);
-                    } else {
-                        showToast(`Sem tarefas neste dia.`, 'error');
-                    }
-                    inputTime.placeholder = "";
-                });
-            });
-        })
-        .catch(err => {
-            console.error(err);
-            inputTime.placeholder = "";
-        });
-    }
-}
-
-// --- SALVAR ATIVIDADE COM DATA ESCOLHIDA ---
-async function saveAct() {
-    const time = document.getElementById('input-time').value;
-    const qtd = Number(document.getElementById('input-qtd').value);
-    const datePickerVal = document.getElementById('modal-date-picker').value;
-
-    const teamName = teams.find(t => t.id === selectedUser.teamId)?.name || '';
-    const isTerceirizado = teamName.toLowerCase().includes('terceirizad');
-
-    if(!time && !isTerceirizado) {
-        return showToast("Por favor, preencha o tempo gasto!", "error");
-    }
-
-    // Formata a data do calendário
-    const [y, m, d] = datePickerVal.split('-');
-    const formattedDate = `${d}/${m}/${y}`;
-
-    const newAct = {
-        id: Date.now(),
-        userId: selectedUser.id,
-        qtd: qtd,
-        time: isTerceirizado ? '00:00' : time, 
-        date: formattedDate 
-    };
-
-    // Salva na nuvem
-    const { error } = await supabaseClient.from('activities').insert([newAct]);
-    if (error) return showToast("Erro ao salvar histórico.", "error");
-
-    activities.push(newAct);
-
-    updateHistory();
-    renderGrid();
-    document.getElementById('input-time').value = isTerceirizado ? '00:00' : ''; 
-    showToast(`Produção salva para ${formattedDate}!`);
-}
-
-function deleteAct(actId) {
-    abrirConfirm("Apagar Registro", "Deseja remover esta produção do histórico do usuário? Isso afetará os cálculos totais.", async () => {
-        // Apaga da nuvem
-        const { error } = await supabaseClient.from('activities').delete().eq('id', actId);
-        if (error) return showToast("Erro ao apagar registro.", "error");
-
-        activities = activities.filter(a => a.id !== actId);
-        updateHistory();
-        renderGrid();
-        showToast("Registro apagado.");
-    });
-}
-
-// --- AUXILIARES ---
-function timeToMin(t) { 
-    if(!t) return 0; 
-    const p = t.split(':').map(Number); 
-    return (p[0] * 60) + p[1]; 
-}
-
-function minToTime(m) { 
-    if(m === 0) return "00h00"; 
-    const h = Math.floor(m / 60); 
-    const mn = m % 60; 
-    return `${String(h).padStart(2,'0')}h${String(mn).padStart(2,'0')}`; 
-}
-
-function calcMedia() {
-    const t = document.getElementById('input-time').value;
-    const q = Number(document.getElementById('input-qtd').value);
-    const mediaBox = document.getElementById('m-media');
-    
-    if(t) {
-        const p = t.split(':').map(Number);
-        const dec = p[0] + (p[1]/60);
-        if (dec > 0) {
-            const result = (q/dec).toFixed(2);
-            mediaBox.innerHTML = `${result} <span style="font-size: 1rem; color: var(--muted);">/h</span>`;
-            mediaBox.style.color = "var(--success)";
-        } else {
-            mediaBox.innerHTML = `0.00 <span style="font-size: 1rem; color: var(--muted);">/h</span>`;
-        }
-    }
-}
-
-function updateHistory() {
-    const hist = document.getElementById('m-history');
-    const uActs = activities.filter(a => a.userId === selectedUser.id);
-    
-    if (uActs.length === 0) {
-        hist.innerHTML = `
-            <div style="color: var(--muted); font-size: 0.85rem; text-align: center; padding: 20px; background: rgba(0,0,0,0.1); border-radius: 10px; border: 1px dashed var(--border);">
-                Nenhum registro no histórico.
-            </div>`;
-        return;
-    }
-
-    hist.innerHTML = uActs.reverse().map(a => `
-        <div style="background: rgba(255,255,255,0.03); padding: 12px 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; transition: 0.2s; border: 1px solid transparent;" onmouseover="this.style.borderColor='var(--border)'" onmouseout="this.style.borderColor='transparent'">
-            <span style="display: flex; gap: 15px;">
-                <b style="color: var(--text);">${a.date}</b> 
-                <span style="color: var(--muted);"><i class="ph-fill ph-clock"></i> ${a.time}</span>
-            </span>
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <span style="background: rgba(16, 185, 129, 0.1); color: var(--success); padding: 4px 10px; border-radius: 20px; font-weight: bold; font-size: 0.8rem;">${a.qtd} un.</span>
-                <button onclick="deleteAct(${a.id})" style="background: none; border: none; color: var(--danger); cursor: pointer; padding: 5px; border-radius: 5px; display: flex; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.1)'" onmouseout="this.style.background='none'" title="Apagar registro">
-                    <i class="ph-fill ph-trash"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
+let isAdmin = false; 
+let loggedUserId = localStorage.getItem('prod_logged_user');
+if (loggedUserId === 'null') { localStorage.removeItem('prod_logged_user'); loggedUserId = null; }
+
+let teams = [], users = [], activities = [], integracoes = [], chartInstances = [];
+let currentTab = 'all', selectedUser = null, sistemaLigado = false;
+let trackerInterval = null, currentTrackingId = null, trackerStartTime = null;
+let pendingUserId = null, actionPinUserId = null, isFirstPin = false, confirmActionCallback = null;
+let selectedMembersForTask = []; 
+
+const colorPalette = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6'];
+const SKELETON_HTML = `
+    <div class="skeleton" style="height: 50px; width: 100%; margin-bottom: 8px;"></div>
+    <div class="skeleton" style="height: 50px; width: 100%; margin-bottom: 8px;"></div>
+    <div class="skeleton" style="height: 50px; width: 100%;"></div>
+`;
+
+function aplicarTooltips() { document.querySelectorAll('[title]').forEach(el => { el.setAttribute('data-tooltip', el.getAttribute('title')); el.removeAttribute('title'); }); }
 
 function showToast(msg, type = 'success') {
-    const c = document.getElementById('toasts');
-    const t = document.createElement('div');
-    t.className = 'toast';
-    if(type === 'error') {
-        t.style.borderLeftColor = 'var(--danger)';
-        t.innerHTML = `<i class="ph-fill ph-warning-circle" style="color: var(--danger); font-size: 1.2rem;"></i> ${msg}`;
-    } else {
-        t.innerHTML = `<i class="ph-fill ph-check-circle" style="color: var(--success); font-size: 1.2rem;"></i> ${msg}`;
-    }
-    c.appendChild(t);
-    setTimeout(() => {
-        t.style.animation = 'slideIn 0.4s reverse forwards';
-        setTimeout(() => t.remove(), 400);
-    }, 3000);
-}
-
-function abrirAdmin() { 
-    document.getElementById('modal-admin').classList.remove('hidden'); 
-    renderAdminUsers();
-}
-function fecharAdmin() { document.getElementById('modal-admin').classList.add('hidden'); }
-function fecharModal() { document.getElementById('modal-user').classList.add('hidden'); }
-
-function renderAdminUsers() {
-    const list = document.getElementById('admin-users-list');
-    if (users.length === 0) {
-        list.innerHTML = `<p style="color: var(--muted); text-align: center; margin-top: 20px;">Não há membros cadastrados ainda.</p>`;
-        return;
-    }
-    list.innerHTML = users.map(u => {
-        const teamName = teams.find(t => t.id === u.teamId)?.name || 'Sem Equipe';
-        return `
-        <div style="display: flex; justify-content: space-between; align-items:center; padding: 12px; border-bottom: 1px solid var(--border); transition: 0.2s;">
-            <div style="display: flex; flex-direction: column;">
-                <span style="font-size: 0.95rem; font-weight: 600;">${u.name}</span>
-                <span style="font-size: 0.75rem; color: var(--accent);">${teamName}</span>
-            </div>
-            <button onclick="delUser(${u.id}, '${u.name}')" style="background:none; border:none; color: var(--muted); cursor:pointer; padding: 8px; border-radius: 8px; transition: 0.2s;" onmouseover="this.style.color='var(--danger)'; this.style.background='rgba(239, 68, 68, 0.1)';" onmouseout="this.style.color='var(--muted)'; this.style.background='none';">
-                <i class="ph-fill ph-trash" style="font-size: 1.1rem;"></i>
-            </button>
-        </div>
-    `}).join('');
-}
-
-function delUser(id, userName) {
-    abrirConfirm("Excluir Membro", `Tem certeza que deseja remover permanentemente o(a) membro "${userName}"? Os registros antigos serão mantidos no banco de dados local para auditoria.`, async () => {
-        // Apaga da nuvem
-        const { error } = await supabaseClient.from('users').delete().eq('id', id);
-        if (error) return showToast("Erro ao excluir membro.", "error");
-
-        users = users.filter(u => u.id !== id);
-        renderGrid();
-        renderAdminUsers();
-        showToast("Membro removido com sucesso!");
-    });
+    const c = document.getElementById('toasts'); if(!c) return; const t = document.createElement('div'); t.className = 'toast';
+    t.innerHTML = `<i class="ph-fill ph-${type === 'error' ? 'warning-circle' : 'check-circle'}" style="color: var(--${type === 'error' ? 'danger' : 'success'}); font-size: 1.2rem;"></i> ${msg}`;
+    if(type === 'error') t.style.borderLeftColor = 'var(--danger)'; c.appendChild(t);
+    setTimeout(() => { t.style.animation = 'slideIn 0.4s reverse forwards'; setTimeout(() => t.remove(), 400); }, 3000);
 }
 
 function toggleTheme() {
-    const body = document.body;
-    const themeIcon = document.getElementById('theme-icon');
+    document.body.classList.toggle('dark-mode'); const isDark = document.body.classList.contains('dark-mode');
+    const icon = document.getElementById('theme-icon'); if(icon) icon.className = isDark ? 'ph-fill ph-sun' : 'ph-fill ph-moon';
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+function fecharModal() { document.getElementById('modal-user')?.classList.add('hidden'); }
+function fecharAdmin() { document.getElementById('modal-admin')?.classList.add('hidden'); }
+function fecharModalSelectUser() { document.getElementById('modal-select-user')?.classList.add('hidden'); }
+function fecharModalPin() { document.getElementById('modal-user-pin')?.classList.add('hidden'); pendingUserId = null; }
+function fecharModalCreatePin() { document.getElementById('modal-create-pin')?.classList.add('hidden'); actionPinUserId = null; }
+function fecharPerfilUsuario() { document.getElementById('modal-user-profile')?.classList.add('hidden'); }
+function fecharCriarConta() { document.getElementById('modal-create-account')?.classList.add('hidden'); }
+function fecharModalAddTeam() { document.getElementById('modal-add-team')?.classList.add('hidden'); }
+function fecharModalAssignTask() { document.getElementById('modal-assign-task')?.classList.add('hidden'); }
+function fecharConfirm() { document.getElementById('modal-confirm')?.classList.add('hidden'); confirmActionCallback = null; }
+
+function abrirConfirm(titulo, mensagem, callback) {
+    const tEl = document.getElementById('confirm-title'), mEl = document.getElementById('confirm-message'), modal = document.getElementById('modal-confirm');
+    if(tEl) tEl.innerText = titulo; if(mEl) mEl.innerText = mensagem; confirmActionCallback = callback; if(modal) modal.classList.remove('hidden');
+}
+const btnConfirm = document.getElementById('btn-confirm-action'); 
+if(btnConfirm) { btnConfirm.onclick = () => { if (confirmActionCallback) confirmActionCallback(); fecharConfirm(); }; }
+
+async function ligarMotorDoSistema() {
+    if (sistemaLigado) return; sistemaLigado = true;
+    try {
+        const { data: dbTeams } = await supabaseClient.from('teams').select('*'); 
+        teams = (dbTeams && dbTeams.length > 0) ? dbTeams : [{ id: 'all', name: 'Todas as Equipes' }];
+        
+        const { data: dbUsers } = await supabaseClient.from('users').select('*'); 
+        if (dbUsers) users = dbUsers;
+        
+        renderTabs(); 
+        
+        const today = new Date();
+        const mainFilter = document.getElementById('main-history-date-filter');
+        const modalFilter = document.getElementById('modal-history-date-filter');
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        if (mainFilter) mainFilter.value = todayStr;
+        if (modalFilter) modalFilter.value = todayStr;
+
+        checarSessaoUsuario(); 
+        renderGrid(); 
+        aplicarTooltips();
+    } catch (err) { console.warn("Erro ao iniciar sistema:", err); }
+}
+
+document.addEventListener('DOMContentLoaded', ligarMotorDoSistema);
+
+window.refreshActiveHistories = function() {
+    const ve = document.getElementById('view-employee-dashboard'); 
+    if(ve && !ve.classList.contains('hidden') && loggedUserId) { carregarHistoricoLivreSupabase(loggedUserId, 'main-historico-livre', 'main-history-date-filter'); }
     
-    body.classList.toggle('dark-mode');
-    
-    if (body.classList.contains('dark-mode')) {
-        themeIcon.classList.remove('ph-moon');
-        themeIcon.classList.add('ph-sun');
-        localStorage.setItem('theme', 'dark');
+    const modalUser = document.getElementById('modal-user'); 
+    if(modalUser && !modalUser.classList.contains('hidden') && selectedUser) { carregarHistoricoLivreSupabase(selectedUser.id, 'm-historico-livre', 'modal-history-date-filter'); }
+}
+
+function aplicarControlesDeAcesso() {
+    const adminControls = document.getElementById('admin-top-controls'), spacerControls = document.getElementById('spacer-top-controls'), btnAddTeam = document.getElementById('btn-add-team-sidebar');
+    if (isAdmin) {
+        if(adminControls) adminControls.style.display = 'flex'; if(spacerControls) spacerControls.style.display = 'none'; if(btnAddTeam) btnAddTeam.style.display = 'flex';
+        document.querySelectorAll('.btn-del-team').forEach(el => el.style.display = 'block'); switchView('grid'); 
     } else {
-        themeIcon.classList.remove('ph-sun');
-        themeIcon.classList.add('ph-moon');
-        localStorage.setItem('theme', 'light');
+        if(adminControls) adminControls.style.display = 'none'; if(spacerControls) spacerControls.style.display = 'flex'; if(btnAddTeam) btnAddTeam.style.display = 'none';
+        document.querySelectorAll('.btn-del-team').forEach(el => el.style.display = 'none');
+        if (loggedUserId) { switchView('employee'); carregarHistoricoLivreSupabase(loggedUserId, 'main-historico-livre', 'main-history-date-filter'); } else { switchView('grid'); }
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const savedTheme = localStorage.getItem('theme');
-    const themeIcon = document.getElementById('theme-icon');
+window.switchView = function(view) {
+    const vg = document.getElementById('view-grid-container'), vc = document.getElementById('view-charts-container'), ve = document.getElementById('view-employee-dashboard'), bg = document.getElementById('btn-view-grid'), bc = document.getElementById('btn-view-charts');
+    if(vg) vg.classList.toggle('hidden', view !== 'grid'); if(vc) vc.classList.toggle('hidden', view !== 'charts'); if(ve) ve.classList.toggle('hidden', view !== 'employee');
+    if(bg) bg.classList.toggle('outline', view !== 'grid'); if(bc) bc.classList.toggle('outline', view !== 'charts'); 
+    if (view === 'charts') window.renderCharts();
+}
+
+async function hashPin(pin) { try { if (window.crypto && window.crypto.subtle) { const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin)); return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join(''); } return btoa(pin).split('').reverse().join(''); } catch(e) { return pin; } }
+
+function checarSessaoUsuario() { 
+    const btn = document.getElementById('btn-meu-painel');
+    const trackerBar = document.getElementById('native-time-tracker'); 
     
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-mode');
-        if (themeIcon) {
-            themeIcon.classList.remove('ph-moon');
-            themeIcon.classList.add('ph-sun');
-        }
+    if (loggedUserId) { 
+        const u = users.find(x => String(x.id) === String(loggedUserId)); 
+        if (u) { 
+            isAdmin = (u.is_admin === true);
+            if(btn) { btn.innerHTML = `<i class="ph-fill ph-user-circle" style="font-size: 1.2rem; color: var(--success);"></i> Opções`; btn.style.borderColor = 'var(--success)'; } 
+            iniciarModuloTracker(loggedUserId); 
+        } else { 
+            deslogarUsuario(false); 
+        } 
+    } else { 
+        isAdmin = false;
+        if(btn) { btn.innerHTML = `<i class="ph-bold ph-user" style="font-size: 1.1rem;"></i> Entrar`; btn.style.borderColor = 'transparent'; } 
+        if(trackerBar) trackerBar.style.display = 'none'; 
+    } 
+    aplicarControlesDeAcesso(); aplicarTooltips(); 
+}
+
+function selecionarMeuUsuario() { if (loggedUserId && users.length > 0) { abrirPerfilUsuario(); } else { const searchInput = document.getElementById('input-search-user'), modalSelect = document.getElementById('modal-select-user'); if (searchInput) searchInput.value = ''; if (modalSelect) { modalSelect.classList.remove('hidden'); setTimeout(() => searchInput && searchInput.focus(), 100); } } }
+function confirmarSelectUser() { const searchInput = document.getElementById('input-search-user'); if(!searchInput) return; const nomeDigitado = searchInput.value.trim().toLowerCase(); if(!nomeDigitado) return showToast("Por favor, digite seu nome.", "error"); const matches = users.filter(x => x.name.toLowerCase().includes(nomeDigitado)); if (matches.length === 0) return showToast("Usuário não encontrado.", "error"); if (matches.length > 1) { const exact = matches.find(x => x.name.toLowerCase() === nomeDigitado); if (exact) { fecharModalSelectUser(); iniciarAcessoUsuario(exact.id); } else { return showToast("Muitos usuários encontrados. Digite seu nome completo.", "error"); } } else { fecharModalSelectUser(); iniciarAcessoUsuario(matches[0].id); } }
+
+function iniciarAcessoUsuario(userId) { 
+    const u = users.find(x => String(x.id) === String(userId)); if (!u) return; 
+    const pinReal = u.pin || '0000'; 
+    if (pinReal === '0000') { 
+        actionPinUserId = userId; isFirstPin = true; 
+        const titleEl = document.getElementById('create-pin-title'), descEl = document.getElementById('create-pin-desc'), inputNovoPin = document.getElementById('new-pin-input'), modalCreate = document.getElementById('modal-create-pin'); 
+        if(titleEl) titleEl.innerText = `Bem-vindo, ${u.name.split(' ')[0]}!`; if(descEl) descEl.innerText = `Crie agora um PIN de 4 números.`; if(inputNovoPin) inputNovoPin.value = ''; if(modalCreate) { modalCreate.classList.remove('hidden'); setTimeout(() => inputNovoPin && inputNovoPin.focus(), 100); } return; 
+    } 
+    pendingUserId = userId; const inputUserPin = document.getElementById('user-pin-input'), modalUserPin = document.getElementById('modal-user-pin'); if(inputUserPin) inputUserPin.value = ''; if(modalUserPin) { modalUserPin.classList.remove('hidden'); setTimeout(() => inputUserPin && inputUserPin.focus(), 100); } 
+}
+
+function verificarPinUsuario() { if (!pendingUserId) return; const targetId = pendingUserId, u = users.find(x => String(x.id) === String(targetId)); if (!u) return; const inputPin = document.getElementById('user-pin-input'); if(!inputPin) return; const tentativa = inputPin.value, pinReal = u.pin || '0000'; hashPin(tentativa).then(hashedTentativa => { if (tentativa === pinReal || hashedTentativa === pinReal) { fecharModalPin(); loggedUserId = String(targetId); localStorage.setItem('prod_logged_user', loggedUserId); checarSessaoUsuario(); showToast("Login realizado com sucesso!", "success"); } else { showToast("PIN Incorreto! Acesso negado.", "error"); inputPin.value = ''; inputPin.focus(); } }); }
+
+async function salvarNovoPin() { if (!actionPinUserId) return; const targetId = actionPinUserId, inputNovo = document.getElementById('new-pin-input'); if(!inputNovo) return; const novoPin = inputNovo.value; if (!/^\d{4}$/.test(novoPin)) return showToast("O PIN deve conter exatamente 4 números!", "error"); const hashedPin = await hashPin(novoPin); const { error } = await supabaseClient.from('users').update({ pin: hashedPin }).eq('id', targetId); if (error) return showToast("Erro ao salvar sua nova senha.", "error"); const uIndex = users.findIndex(u => String(u.id) === String(targetId)); if (uIndex > -1) users[uIndex].pin = hashedPin; fecharModalCreatePin(); if (isFirstPin) { loggedUserId = String(targetId); localStorage.setItem('prod_logged_user', loggedUserId); checarSessaoUsuario(); showToast("Senha criada e Login realizado!", "success"); } else { fecharPerfilUsuario(); showToast("Sua senha foi alterada com sucesso!", "success"); } }
+
+function abrirPerfilUsuario() { if (!loggedUserId) return; const u = users.find(x => String(x.id) === String(loggedUserId)); if (!u) return; const avatar = document.getElementById('profile-avatar'), name = document.getElementById('profile-name'), modal = document.getElementById('modal-user-profile'); if(avatar) avatar.src = u.avatar; if(name) name.innerText = u.name; if(modal) modal.classList.remove('hidden'); }
+function deslogarUsuario(mostrarAviso = true) { loggedUserId = null; localStorage.removeItem('prod_logged_user'); checarSessaoUsuario(); fecharPerfilUsuario(); if (mostrarAviso) showToast("Você saiu da conta com segurança."); }
+function alterarPin() { actionPinUserId = loggedUserId; isFirstPin = false; const inputEl = document.getElementById('new-pin-input'), modalEl = document.getElementById('modal-create-pin'); if(inputEl) inputEl.value = ''; if(modalEl) { modalEl.classList.remove('hidden'); setTimeout(() => inputEl && inputEl.focus(), 100); } }
+function avisoAcessoNegado() { showToast("Acesso restrito. Faça login primeiro.", "error"); }
+
+function abrirAdmin() { 
+    if (!loggedUserId) return showToast("Por favor, entre na sua conta primeiro para acessar os ajustes.", "error");
+    const u = users.find(x => String(x.id) === String(loggedUserId));
+    if (!u || !u.is_admin) return showToast("Acesso restrito. Apenas administradores podem acessar esta área.", "error");
+    const modal = document.getElementById('modal-admin'); if(modal) modal.classList.remove('hidden'); 
+    renderAdminUsers(); mostrarGreetingAdmin(u.name.split(' ')[0]); carregarAtividadesNoAdmin(); carregarTarefasNoAdmin(); carregarVisaoAoVivo(); 
+}
+
+function mostrarGreetingAdmin(nome) { const greetingBox = document.getElementById('admin-greeting-box'), loggedNameSpan = document.getElementById('admin-logged-name'); if (greetingBox && loggedNameSpan) { loggedNameSpan.innerText = nome || "Administrador"; greetingBox.style.display = 'flex'; } }
+
+// ==========================================
+// CUSTOM DROPDOWNS LOGIC (MENU SUSPENSO)
+// ==========================================
+window.toggleCustomDropdown = function(id, event) {
+    event.stopPropagation();
+    document.querySelectorAll('.custom-options-menu').forEach(menu => {
+        if(menu.id !== id) menu.classList.add('hidden');
+    });
+    document.getElementById(id).classList.toggle('hidden');
+}
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.custom-select') && !e.target.closest('.custom-options-menu')) {
+        document.querySelectorAll('.custom-options-menu').forEach(menu => menu.classList.add('hidden'));
     }
 });
 
-// ==========================================
-// ABA DE GRÁFICOS (MÚLTIPLOS E SEPARADOS)
-// ==========================================
-function switchView(view) {
-    const gridContainer = document.getElementById('view-grid-container');
-    const chartsContainer = document.getElementById('view-charts-container');
-    const btnGrid = document.getElementById('btn-view-grid');
-    const btnCharts = document.getElementById('btn-view-charts');
-
-    if (view === 'grid') {
-        gridContainer.classList.remove('hidden');
-        chartsContainer.classList.add('hidden');
-        
-        btnGrid.classList.remove('outline');
-        btnGrid.style.border = 'none';
-        
-        btnCharts.classList.add('outline');
-        btnCharts.style.border = 'none';
-    } else {
-        gridContainer.classList.add('hidden');
-        chartsContainer.classList.remove('hidden');
-        
-        btnCharts.classList.remove('outline');
-        btnCharts.style.border = 'none';
-        
-        btnGrid.classList.add('outline');
-        btnGrid.style.border = 'none';
-        
-        renderCharts();
-    }
+window.selectCustomOption = function(hiddenInputId, displayId, value, text, menuId) {
+    document.getElementById(displayId).innerText = text;
+    document.getElementById(displayId).style.color = 'var(--text)'; // Update color after selection
+    const input = document.getElementById(hiddenInputId);
+    input.value = value;
+    document.getElementById(menuId).classList.add('hidden');
+    input.dispatchEvent(new Event('change'));
 }
 
-function limparFiltroData() {
-    document.getElementById('chart-date-start').value = '';
-    document.getElementById('chart-date-end').value = '';
-    document.getElementById('chart-search').value = ''; 
-    renderCharts();
-    showToast("Filtros limpos!");
-}
-
-function renderCharts() {
-    // 1. Destruir gráficos anteriores
-    chartInstances.forEach(chart => chart.destroy());
-    chartInstances = [];
-
-    const mode = document.getElementById('chart-mode').value;
-    const startInput = document.getElementById('chart-date-start').value;
-    const endInput = document.getElementById('chart-date-end').value;
-    const searchTerm = document.getElementById('chart-search').value.toLowerCase();
-
-    // 2. Localizar e preparar o container que receberá os gráficos
-    let chartContainer = document.getElementById('multi-charts-container');
-    if (!chartContainer) {
-        // Usa o pai do canvas original como container dinâmico
-        const originalCanvas = document.getElementById('teamChart');
-        if (originalCanvas) {
-            chartContainer = originalCanvas.parentElement;
-            chartContainer.id = 'multi-charts-container'; 
+async function carregarAtividadesNoSelect() {
+    const { data } = await supabaseClient.from('atividades').select('*'); 
+    const menu = document.getElementById('dropdown-atividade');
+    if(menu) {
+        menu.innerHTML = `<div class="custom-option" onclick="selectCustomOption('tracker-atividade', 'display-atividade', '', 'Nenhuma...', 'dropdown-atividade')">Nenhuma...</div>`; 
+        if (data) { 
+            data.forEach(a => { 
+                menu.innerHTML += `<div class="custom-option" onclick="selectCustomOption('tracker-atividade', 'display-atividade', '${a.id}', '${a.nome}', 'dropdown-atividade')">${a.nome}</div>`; 
+            }); 
         }
     }
-    if (!chartContainer) return;
-    
-    // Limpa o container para recriar
-    chartContainer.innerHTML = ''; 
-    chartContainer.style.display = 'grid';
-    chartContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(400px, 1fr))';
-    chartContainer.style.gap = '20px';
+}
 
-    // 3. Filtrar Atividades
-    let filteredActs = activities;
-    
-    let startTs = 0;
-    let endTs = Infinity;
-    
-    if (startInput) {
-        // Quebra a data 'YYYY-MM-DD' em números para evitar conflitos de fuso/navegador
-        const [y, m, d] = startInput.split('-').map(Number);
-        startTs = new Date(y, m - 1, d, 0, 0, 0).getTime();
+async function carregarTarefasNoSelect() {
+    const { data, error } = await supabaseClient.from('tarefas').select('*'); if (error) return;
+    const menu = document.getElementById('dropdown-tarefa');
+    if(menu) {
+        menu.innerHTML = `<div class="custom-option" onclick="selectCustomOption('tracker-descricao', 'display-tarefa', '', 'Selecione uma tarefa...', 'dropdown-tarefa')">Selecione uma tarefa...</div>`;
+        if (data) {
+            data.forEach(t => { 
+                let show = false;
+                if (!t.atribuido_a || t.atribuido_a === 'all') { show = true; } else { const targets = t.atribuido_a.split(','); if (targets.includes(String(loggedUserId))) show = true; }
+                if (show) menu.innerHTML += `<div class="custom-option" onclick="selectCustomOption('tracker-descricao', 'display-tarefa', '${t.nome}', '${t.nome}', 'dropdown-tarefa')">${t.nome}</div>`; 
+            });
+        }
     }
+}
+
+// ==========================================
+// 7. TIME TRACKER NATIVO (Cronómetro)
+// ==========================================
+async function iniciarModuloTracker(userId) {
+    const tracker = document.getElementById('native-time-tracker'); if(tracker) tracker.style.display = 'flex';
+    await carregarAtividadesNoSelect(); await carregarTarefasNoSelect(); verificarTrackerEmAndamento(userId);
+}
+
+window.onTrackerFieldChanged = async function() {
+    if (!currentTrackingId) return; 
+    const ativInput = document.getElementById('tracker-atividade'), descInput = document.getElementById('tracker-descricao');
+    const atividadeId = ativInput.value ? ativInput.value : null, descricao = descInput.value || "Sem descrição";
+    const { error } = await supabaseClient.from('apontamentos').update({ atividade_id: atividadeId, descricao: descricao }).eq('id', currentTrackingId);
+    if (!error) { refreshActiveHistories(); }
+}
+
+async function verificarTrackerEmAndamento(userId) {
+    let res = await supabaseClient.from('apontamentos').select('*').eq('usuario_id', userId).eq('em_andamento', true).maybeSingle();
+    if (!res.data) res = await supabaseClient.from('apontamentos').select('*').eq('usuario_id', String(userId)).eq('em_andamento', true).maybeSingle();
     
-    if (endInput) {
-        const [y, m, d] = endInput.split('-').map(Number);
-        endTs = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
-    }
-
-    if (startInput || endInput) {
-        // Filtra comparando o timestamp exato do momento em que foi salvo (a.id) com o período
-        filteredActs = activities.filter(a => a.id >= startTs && a.id <= endTs);
-    }
-
-    // Ordena as atividades de forma cronológica (do mais antigo pro mais novo)
-    filteredActs.sort((a, b) => a.id - b.id);
-
-    // Identifica Entidades (Equipes ou Usuários) que devem ter um gráfico
-    let entitiesToRender = [];
-
-    if (mode === 'teams') {
-        let displayTeams = teams.filter(t => t.id !== 'all');
-        if (searchTerm) displayTeams = displayTeams.filter(t => t.name.toLowerCase().includes(searchTerm));
+    if (res.data) { 
+        currentTrackingId = res.data.id; trackerStartTime = new Date(res.data.inicio); 
         
-        displayTeams.forEach(t => {
-            const tUsers = users.filter(u => u.teamId === t.id);
-            const tActs = filteredActs.filter(a => tUsers.some(u => u.id === a.userId));
-            entitiesToRender.push({ name: `Equipe: ${t.name}`, acts: tActs });
-        });
+        const ativInput = document.getElementById('tracker-atividade');
+        const descInput = document.getElementById('tracker-descricao');
+        if(ativInput) ativInput.value = res.data.atividade_id || ""; 
+        if(descInput) descInput.value = res.data.descricao || ""; 
+
+        const descDisplay = document.getElementById('display-tarefa');
+        if(descDisplay) { descDisplay.innerText = res.data.descricao || "Selecione uma tarefa..."; descDisplay.style.color = 'var(--text)'; }
+
+        const ativDisplay = document.getElementById('display-atividade');
+        if(res.data.atividade_id) {
+            const { data: dbAtivs } = await supabaseClient.from('atividades').select('*');
+            const nomeAtiv = dbAtivs?.find(a => String(a.id) === String(res.data.atividade_id))?.nome || "Nenhuma...";
+            if(ativDisplay) { ativDisplay.innerText = nomeAtiv; ativDisplay.style.color = 'var(--text)'; }
+        } else {
+            if(ativDisplay) ativDisplay.innerText = "Nenhuma...";
+        }
+
+        iniciarRelogioVisual(); 
+    }
+}
+
+window.retomarTarefa = async function(atividadeId, descricao) {
+    if (currentTrackingId) { showToast("Pare a tarefa atual antes de iniciar outra.", "error"); return; }
+    
+    const ativInput = document.getElementById('tracker-atividade');
+    const descInput = document.getElementById('tracker-descricao');
+    if(ativInput) ativInput.value = atividadeId || ""; 
+    if(descInput) descInput.value = descricao || ""; 
+
+    const descDisplay = document.getElementById('display-tarefa');
+    if(descDisplay) { descDisplay.innerText = descricao || "Selecione uma tarefa..."; descDisplay.style.color = 'var(--text)'; }
+
+    const ativDisplay = document.getElementById('display-atividade');
+    if(atividadeId) {
+        const { data: dbAtivs } = await supabaseClient.from('atividades').select('*');
+        const nomeAtiv = dbAtivs?.find(a => String(a.id) === String(atividadeId))?.nome || "Nenhuma...";
+        if(ativDisplay) { ativDisplay.innerText = nomeAtiv; ativDisplay.style.color = 'var(--text)'; }
     } else {
-        let teamUsers = currentTab === 'all' ? users : users.filter(u => u.teamId === currentTab);
-        if (searchTerm) teamUsers = teamUsers.filter(u => u.name.toLowerCase().includes(searchTerm));
-        
-        teamUsers.forEach(u => {
-            const uActs = filteredActs.filter(a => a.userId === u.id);
-            entitiesToRender.push({ name: u.name, acts: uActs });
-        });
+        if(ativDisplay) ativDisplay.innerText = "Nenhuma...";
     }
 
-    // Configurações Visuais 
-    const isDarkMode = document.body.classList.contains('dark-mode');
-    const textColor = isDarkMode ? '#94a3b8' : '#64748b'; 
-    const gridColor = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-    const lineColor = mode === 'teams' ? '#10b981' : '#38bdf8'; 
-    const fillColor = mode === 'teams' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)';
+    toggleTracker();
+};
 
-    // Função auxiliar: Agrupar por data para o eixo X do gráfico
-    function getTrendData(acts) {
-        const grouped = {};
-        acts.forEach(a => {
-            const d = a.date; 
-            if(!grouped[d]) grouped[d] = { qtd: 0, min: 0 };
-            grouped[d].qtd += a.qtd;
-            grouped[d].min += timeToMin(a.time);
-        });
+window.toggleTracker = async function() {
+    const ativInput = document.getElementById('tracker-atividade'), descInput = document.getElementById('tracker-descricao'); 
+    if(!ativInput || !descInput) return;
+    const atividadeId = ativInput.value, descricao = descInput.value, icon = document.getElementById('tracker-icon'), btn = document.getElementById('btn-tracker-play'), textBtn = document.getElementById('tracker-text-btn');
+    if (!loggedUserId) return showToast("Sessão expirada. Faça login novamente.", "error");
+
+    if (currentTrackingId) {
+        const horaFim = new Date(); let duracao = Math.floor((horaFim - trackerStartTime) / 1000); 
+        await supabaseClient.from('apontamentos').update({ fim: horaFim.toISOString(), duracao_segundos: duracao, em_andamento: false }).eq('id', currentTrackingId);
+        pararRelogioVisual(); currentTrackingId = null; trackerStartTime = null;
         
-        const labels = [];
-        const data = [];
-        Object.keys(grouped).forEach(date => {
-            const totalQtd = grouped[date].qtd;
-            const totalHours = grouped[date].min / 60;
-            const media = totalHours > 0 ? (totalQtd / totalHours).toFixed(2) : 0;
-            labels.push(date);
-            data.push(parseFloat(media));
-        });
-        return { labels, data };
+        const display = document.getElementById('tracker-display'); if(display) display.innerText = "00:00:00"; 
+        if(icon) icon.classList.replace('ph-stop', 'ph-play'); if(btn) btn.style.background = 'var(--success)'; if(textBtn) textBtn.innerText = "Iniciar";
+        
+        // Reset Dropdowns
+        if(descInput) descInput.value = "";
+        const descDisplay = document.getElementById('display-tarefa'); if(descDisplay) { descDisplay.innerText = "Selecione uma tarefa..."; descDisplay.style.color = 'var(--text)'; }
+        if(ativInput) ativInput.value = "";
+        const ativDisplay = document.getElementById('display-atividade'); if(ativDisplay) { ativDisplay.innerText = "Nenhuma..."; ativDisplay.style.color = 'var(--accent)'; }
+        
+        showToast("Tempo registado!"); refreshActiveHistories();
+    } else {
+        trackerStartTime = new Date();
+        const { data, error } = await supabaseClient.from('apontamentos').insert([{ usuario_id: loggedUserId, atividade_id: atividadeId ? atividadeId : null, descricao: descricao || "Sem descrição", inicio: trackerStartTime.toISOString(), em_andamento: true }]).select();
+        if (!error && data) { currentTrackingId = data[0].id; iniciarRelogioVisual(); refreshActiveHistories(); } else { showToast("Erro ao iniciar temporizador.", "error"); }
+    }
+}
+
+function iniciarRelogioVisual() {
+    const icon = document.getElementById('tracker-icon'), btn = document.getElementById('btn-tracker-play'), textBtn = document.getElementById('tracker-text-btn'), display = document.getElementById('tracker-display');
+    if(icon) icon.classList.replace('ph-play', 'ph-stop'); if(btn) btn.style.background = 'var(--danger)'; if(textBtn) textBtn.innerText = "Parar";
+    trackerInterval = setInterval(() => {
+        let diferencaMs = new Date() - trackerStartTime; const h = String(Math.floor(diferencaMs / 3600000)).padStart(2, '0'), m = String(Math.floor((diferencaMs % 3600000) / 60000)).padStart(2, '0'), s = String(Math.floor((diferencaMs % 60000) / 1000)).padStart(2, '0');
+        const timeStr = `${h}:${m}:${s}`; if(display) display.innerText = timeStr; document.title = `⏳ ${timeStr} | Prod Manager`;
+    }, 1000);
+}
+
+function pararRelogioVisual() { clearInterval(trackerInterval); document.title = "Sistema de Produção Pro - Equipes"; }
+
+async function carregarHistoricoLivreSupabase(userId, listContainerId = 'm-historico-livre', dateFilterId = null) {
+    const list = document.getElementById(listContainerId); if(!list) return; 
+    if (!list.innerHTML || list.innerHTML.trim() === '') list.innerHTML = SKELETON_HTML;
+    
+    let targetDate = new Date();
+    const dFilter = document.getElementById(dateFilterId);
+    if (dFilter && dFilter.value) {
+        const [y, m, d] = dFilter.value.split('-');
+        targetDate = new Date(y, m-1, d);
+    }
+    
+    const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+    const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+
+    const { data: dbAtivs } = await supabaseClient.from('atividades').select('*');
+    const atividadesList = dbAtivs || [];
+
+    let res = await supabaseClient.from('apontamentos').select('*').eq('usuario_id', String(userId)).gte('inicio', startOfDay.toISOString()).lte('inicio', endOfDay.toISOString()).order('inicio', { ascending: false });
+    if (!res.data || res.data.length === 0) { res = await supabaseClient.from('apontamentos').select('*').eq('usuario_id', Number(userId)).gte('inicio', startOfDay.toISOString()).lte('inicio', endOfDay.toISOString()).order('inicio', { ascending: false }); }
+    if (!res.data || res.data.length === 0) { res = await supabaseClient.from('apontamentos').select('*').eq('usuario_id', userId).gte('inicio', startOfDay.toISOString()).lte('inicio', endOfDay.toISOString()).order('inicio', { ascending: false }); }
+
+    let fetchedData = res.data || [];
+
+    if (fetchedData.length === 0) { 
+        list.innerHTML = `<div style="color: var(--muted); padding: 15px; border: 1px dashed var(--border); border-radius: 8px; text-align: center;">Nenhum tempo guardado neste dia.</div>`; 
+        return; 
     }
 
-    let hasRenderedAny = false;
+    const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const agora = new Date();
+    let dataStr = "";
+    
+    if (targetDate.getDate() === agora.getDate() && targetDate.getMonth() === agora.getMonth() && targetDate.getFullYear() === agora.getFullYear()) {
+        dataStr = "Hoje, " + String(targetDate.getDate()).padStart(2, '0') + " de " + meses[targetDate.getMonth()];
+    } else {
+        dataStr = String(targetDate.getDate()).padStart(2, '0') + " de " + meses[targetDate.getMonth()];
+    }
 
-    // 4. Cria e renderiza cada gráfico separadamente
-    entitiesToRender.forEach((entity, index) => {
-        if (entity.acts.length === 0) return; // Pula se não tiver nenhum apontamento
+    let html = `<div class="history-group-header">${dataStr}</div>`;
+    html += fetchedData.map(ap => {
+        const isRunning = ap.em_andamento, color = colorPalette[(ap.atividade_id || 0) % colorPalette.length];
+        let duracaoStr = '';
+        if (isRunning) { duracaoStr = `<span style="color: var(--success); font-size: 0.8rem;"><i class="ph ph-spinner-gap ph-spin"></i> A rodar</span>`; } 
+        else if (ap.duracao_segundos !== null) { const h = String(Math.floor(ap.duracao_segundos / 3600)).padStart(2, '0'), m = String(Math.floor((ap.duracao_segundos % 3600) / 60)).padStart(2, '0'); duracaoStr = `${h}h ${m}m`; }
+
+        const horaInicio = new Date(ap.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), horaFim = (ap.fim && !isRunning) ? new Date(ap.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+        const textoDescricao = ap.descricao || 'Sem descrição';
+        const nomeCategoria = atividadesList.find(x => String(x.id) === String(ap.atividade_id))?.nome || 'Nenhuma categoria';
+        let playBtn = isRunning ? "" : `<button class="btn-play-history" onclick="retomarTarefa('${ap.atividade_id || ''}', '${ap.descricao || ''}')" data-tooltip="Retomar esta tarefa"><i class="ph-fill ph-play"></i></button>`;
+        let statusClass = isRunning ? "active" : "";
+
+        return `
+        <div class="history-row ${statusClass}">
+            <div class="history-main">
+                <span class="color-dot" style="background: ${color};"></span>
+                <div class="history-text">
+                    <strong>${textoDescricao}</strong>
+                    <small>${nomeCategoria}</small>
+                </div>
+            </div>
+            <div class="history-meta" style="display: flex; gap: 5px; align-items: center;">
+                <input type="time" class="inline-time-edit" value="${horaInicio}" onchange="salvarEdicaoInline(${ap.id}, '${ap.inicio}', 'inicio', this.value)" data-tooltip="Editar Início">
+                <span style="color: var(--muted); margin: 0 2px;">-</span>
+                <input type="time" class="inline-time-edit" value="${horaFim}" onchange="salvarEdicaoInline(${ap.id}, '${ap.inicio}', 'fim', this.value)" data-tooltip="Editar Fim" ${isRunning ? 'disabled' : ''}>
+                
+                <span class="history-duration" style="margin-left: 15px;">${duracaoStr}</span>
+                
+                <div style="display: flex; gap: 5px; margin-left: 10px;">
+                    ${playBtn}
+                    <button class="btn-play-history" style="color: var(--danger);" onclick="deletarApontamentoTempo(${ap.id})" data-tooltip="Eliminar registo"><i class="ph-bold ph-trash"></i></button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+    
+    list.innerHTML = html; aplicarTooltips();
+}
+
+window.salvarEdicaoInline = async function(id, baseIso, field, newTimeStr) {
+    if(!newTimeStr || newTimeStr === '--:--') return; 
+    const [h, m] = newTimeStr.split(':').map(Number); if(isNaN(h) || isNaN(m)) return;
+    
+    const baseDate = new Date(baseIso);
+    const { data } = await supabaseClient.from('apontamentos').select('*').eq('id', id).single();
+    
+    if(data) {
+        let nI = new Date(data.inicio), nF = data.fim ? new Date(data.fim) : null;
         
-        hasRenderedAny = true;
-        const trend = getTrendData(entity.acts);
-        
-        // Criação da "Caixa" (Card) para o Gráfico
-        const wrapper = document.createElement('div');
-        wrapper.style.padding = '20px';
-        wrapper.style.background = isDarkMode ? 'var(--bg)' : '#fff';
-        wrapper.style.border = '1px solid var(--border)';
-        wrapper.style.borderRadius = '12px';
-        wrapper.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05)';
-
-        // Título do Card
-        const title = document.createElement('h3');
-        title.innerHTML = `<i class="ph-fill ${mode === 'teams' ? 'ph-users' : 'ph-user'}"></i> ${entity.name}`;
-        title.style.marginBottom = '20px';
-        title.style.color = 'var(--text)';
-        title.style.fontSize = '1.1rem';
-        title.style.display = 'flex';
-        title.style.alignItems = 'center';
-        title.style.gap = '8px';
-        wrapper.appendChild(title);
-
-        // Canvas isolado
-        const canvas = document.createElement('canvas');
-        canvas.id = `chart_${index}`;
-        wrapper.appendChild(canvas);
-        
-        chartContainer.appendChild(wrapper);
-
-        // Inicialização do Chart.js para este canvas
-        const ctx = canvas.getContext('2d');
-        const newChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: trend.labels,
-                datasets: [{
-                    label: 'Média Diária',
-                    data: trend.data,
-                    backgroundColor: fillColor, 
-                    borderColor: lineColor,
-                    borderWidth: 2,
-                    pointBackgroundColor: lineColor,
-                    pointBorderColor: isDarkMode ? '#1e293b' : '#ffffff',
-                    pointBorderWidth: 2,
-                    pointRadius: 4,
-                    pointHoverRadius: 6,
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false }, 
-                    tooltip: {
-                        backgroundColor: 'rgba(0,0,0,0.8)',
-                        titleFont: { family: 'Inter' },
-                        bodyFont: { family: 'Inter', size: 14 },
-                        callbacks: {
-                            label: function(context) { return context.raw + ' un/h'; }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: textColor, font: { family: 'Inter' } },
-                        grid: { color: gridColor }
-                    },
-                    x: {
-                        ticks: { color: textColor, font: { family: 'Inter', weight: 600 } },
-                        grid: { display: false }
-                    }
+        if (field === 'inicio') { 
+            let suggestedNewDate = new Date(baseDate); 
+            suggestedNewDate.setHours(h, m, 0, 0); 
+            
+            const now = new Date();
+            if (baseDate.getDate() === now.getDate() && baseDate.getMonth() === now.getMonth() && baseDate.getFullYear() === now.getFullYear()) {
+                if (suggestedNewDate > now) {
+                    showToast("Não pode registar horas no futuro.", "error"); refreshActiveHistories(); return;
                 }
             }
-        });
-
-        chartInstances.push(newChart);
-    });
-
-    if (!hasRenderedAny) {
-        chartContainer.style.display = 'block';
-        chartContainer.innerHTML = `
-            <div style="text-align: center; padding: 40px; color: var(--muted);">
-                <i class="ph-duotone ph-chart-line-down" style="font-size: 3rem; margin-bottom: 15px;"></i>
-                <p>Nenhum dado de produção encontrado para gerar os gráficos.</p>
-            </div>
-        `;
+            nI = suggestedNewDate; 
+        } else if (field === 'fim') { 
+            let suggestedNewDate = new Date(baseDate); 
+            suggestedNewDate.setHours(h, m, 0, 0);
+            
+            const now = new Date();
+            if (baseDate.getDate() === now.getDate() && baseDate.getMonth() === now.getMonth() && baseDate.getFullYear() === now.getFullYear()) {
+                if (suggestedNewDate > now) {
+                    showToast("Não pode definir um fim no futuro.", "error"); refreshActiveHistories(); return;
+                }
+            }
+            nF = suggestedNewDate; 
+        }
+        
+        if (nF && nF < nI && field === 'fim') nF.setDate(nF.getDate() + 1); if (nF && nF < nI && field === 'inicio') nI.setDate(nI.getDate() - 1);
+        let dur = null; if (nF && !data.em_andamento) dur = Math.floor((nF - nI) / 1000);
+        
+        const upd = { inicio: nI.toISOString() }; if (nF) upd.fim = nF.toISOString(); if (dur !== null) upd.duracao_segundos = dur;
+        await supabaseClient.from('apontamentos').update(upd).eq('id', id);
+        
+        showToast("Horário ajustado!", "success"); refreshActiveHistories();
+        if (currentTrackingId == id && field === 'inicio') { trackerStartTime = nI; }
     }
+}
+
+window.deletarApontamentoTempo = function(id) {
+    abrirConfirm("Eliminar Tempo", "Tem a certeza que deseja eliminar esta marcação de tempo?", async () => {
+        const { error } = await supabaseClient.from('apontamentos').delete().eq('id', id);
+        if (error) { showToast("Não é possível eliminar: " + error.message, "error"); } else {
+            showToast("Marcação eliminada com sucesso!", "success"); refreshActiveHistories();
+            if (currentTrackingId == id) {
+                pararRelogioVisual(); currentTrackingId = null; trackerStartTime = null;
+                const dsp = document.getElementById('tracker-display'); if(dsp) dsp.innerText = "00:00:00";
+                const ic = document.getElementById('tracker-icon'); if(ic) ic.classList.replace('ph-stop', 'ph-play');
+                const bp = document.getElementById('btn-tracker-play'); if(bp) bp.style.background = 'var(--success)';
+                const tb = document.getElementById('tracker-text-btn'); if(tb) tb.innerText = "Iniciar";
+            }
+        }
+    });
+}
+
+function abrirModalNovaTarefa() {
+    const input = document.getElementById('new-tarefa-name');
+    if(!input) return; const nome = input.value.trim(); if(!nome) return showToast("Digite o nome da tarefa primeiro!", "error");
+    const display = document.getElementById('assign-task-name-display'); if(display) display.innerText = nome;
+    selectedMembersForTask = []; renderAssignUsersList(); 
+    const radios = document.getElementsByName('task_scope'); if(radios.length > 0) { radios[0].checked = true; toggleTaskScope(); }
+    const modal = document.getElementById('modal-assign-task'); if(modal) modal.classList.remove('hidden');
+}
+
+function renderAssignUsersList() {
+    const usersList = document.getElementById('assign-users-list'), countSpan = document.getElementById('count-selected-members');
+    if(usersList) {
+        usersList.innerHTML = users.map(u => {
+            const isSelected = selectedMembersForTask.includes(String(u.id));
+            const btnStyle = isSelected ? 'background: var(--success); color: #fff; border: 1px solid var(--success);' : 'background: transparent; color: var(--accent); border: 1px solid var(--accent);';
+            const icon = isSelected ? 'ph-check' : 'ph-plus';
+            return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--border);"><div style="display: flex; flex-direction: column;"><span style="font-size: 0.85rem; color: var(--text); font-weight: 600;">${u.name}</span><span style="font-size: 0.7rem; color: var(--muted);">${teams.find(t=>t.id===u.teamId)?.name||''}</span></div><button onclick="toggleMemberTask('${u.id}')" style="cursor: pointer; width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: 0.2s; ${btnStyle}"><i class="ph-bold ${icon}"></i></button></div>`;
+        }).join('');
+    }
+    if(countSpan) countSpan.innerText = selectedMembersForTask.length;
+}
+
+window.toggleMemberTask = function(id) {
+    id = String(id);
+    if (selectedMembersForTask.includes(id)) { selectedMembersForTask = selectedMembersForTask.filter(x => x !== id); } else { selectedMembersForTask.push(id); }
+    renderAssignUsersList();
+}
+
+window.toggleTaskScope = function() {
+    const scope = document.querySelector('input[name="task_scope"]:checked').value, container = document.getElementById('specific-scope-container');
+    if(container) { if(scope === 'specific') container.classList.remove('hidden'); else container.classList.add('hidden'); }
+}
+
+window.confirmarNovaTarefa = async function() {
+    const input = document.getElementById('new-tarefa-name'); const nome = input.value.trim(); if(!nome) return;
+    const scope = document.querySelector('input[name="task_scope"]:checked').value; let atribuido_a = 'all';
+    if (scope === 'specific') {
+        if (selectedMembersForTask.length === 0) return showToast("Adicione pelo menos um membro clicando no +", "error");
+        atribuido_a = selectedMembersForTask.join(',');
+    }
+    const { error } = await supabaseClient.from('tarefas').insert([{ nome: nome, atribuido_a: atribuido_a }]); 
+    if (error) { if(error.message.includes('atribuido_a')) { alert("Aviso: Falta a coluna 'atribuido_a' na tabela tarefas."); return; } return alert("Erro: " + error.message); }
+    input.value = ''; fecharModalAssignTask(); showToast("Tarefa criada!"); carregarTarefasNoAdmin(); if (loggedUserId) carregarTarefasNoSelect();
+}
+
+async function carregarTarefasNoAdmin() {
+    const { data } = await supabaseClient.from('tarefas').select('*').order('id', { ascending: false }); const list = document.getElementById('admin-tarefas-list'); if(!list) return;
+    if(!data || data.length === 0) { list.innerHTML = `<span style="color: var(--muted); font-size: 0.8rem;">Nenhuma tarefa cadastrada.</span>`; return; }
+    list.innerHTML = data.map(t => {
+        let badge = "Toda a Equipe";
+        if (t.atribuido_a && t.atribuido_a !== 'all') { const count = t.atribuido_a.split(',').length; badge = `<i class="ph-fill ph-lock-key"></i> Restrito (${count})`; }
+        return `<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);"><div style="display: flex; flex-direction: column;"><span style="font-weight: 600; font-size: 0.85rem; color: var(--text);">${t.nome}</span><span style="font-size: 0.7rem; color: var(--accent);">${badge}</span></div><button onclick="deletarTarefa(${t.id})" style="background: none; border: none; color: var(--danger); cursor: pointer;" data-tooltip="Apagar Tarefa"><i class="ph-fill ph-trash"></i></button></div>`;
+    }).join(''); aplicarTooltips();
+}
+
+window.deletarTarefa = function(id) {
+    abrirConfirm("Eliminar Tarefa", "Deseja apagar esta tarefa da lista?", async () => {
+        const { error } = await supabaseClient.from('tarefas').delete().eq('id', id);
+        if(error) { showToast("Erro: A tarefa está em uso.", "error"); } else { carregarTarefasNoAdmin(); if (loggedUserId) carregarTarefasNoSelect(); showToast("Tarefa eliminada!"); }
+    });
+}
+
+async function carregarAtividadesNoAdmin() {
+    const { data } = await supabaseClient.from('atividades').select('*').order('id', { ascending: false }); const l = document.getElementById('admin-atividades-list'); if(!l) return;
+    if(!data || data.length === 0) { l.innerHTML = `<span style="color:var(--muted);font-size:0.8rem;">Nenhuma.</span>`; return; }
+    l.innerHTML = data.map(a => `<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:8px;"><span style="font-weight:600;font-size:0.85rem;">${a.nome}</span><button onclick="deletarAtividade(${a.id})" style="background:none;border:none;color:var(--danger);cursor:pointer;"><i class="ph-fill ph-trash"></i></button></div>`).join('');
+}
+
+window.addAtividade = async function() { const i = document.getElementById('new-atividade-name'); if(!i) return; const n = i.value.trim(); if(!n) return; const { error } = await supabaseClient.from('atividades').insert([{ nome: n }]); if(error) return showToast("Erro.", "error"); i.value=''; showToast("Criada!"); carregarAtividadesNoAdmin(); if(loggedUserId) carregarAtividadesNoSelect(); }
+window.deletarAtividade = function(id) { abrirConfirm("Eliminar", "Eliminar categoria?", async () => { const { error } = await supabaseClient.from('atividades').delete().eq('id', id); if (error) { showToast("A categoria está em uso.", "error"); } else { carregarAtividadesNoAdmin(); if(loggedUserId) carregarAtividadesNoSelect(); showToast("Eliminada!"); } }); }
+
+window.openUserModal = function(id) {
+    selectedUser = users.find(u => String(u.id) === String(id)); if(!selectedUser) return;
+    const t = teams.find(x => x.id === selectedUser.teamId)?.name || 'Sem Equipe';
+    const m = document.getElementById('modal-user'), n = document.getElementById('m-name'), a = document.getElementById('m-avatar'), tl = document.getElementById('m-team-label');
+    
+    if(m) m.classList.remove('hidden'); 
+    if(n) n.innerText = selectedUser.name; 
+    if(a) a.src = selectedUser.avatar; 
+    if(tl) tl.innerText = t;
+
+    const today = new Date();
+    const modalFilter = document.getElementById('modal-history-date-filter');
+    if (modalFilter) modalFilter.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    carregarHistoricoLivreSupabase(id, 'm-historico-livre', 'modal-history-date-filter');
+}
+
+function renderTabs() {
+    const l = document.getElementById('team-tabs-list'); if(!l) return; l.innerHTML = '';
+    teams.forEach(t => { const a = currentTab === t.id ? 'active' : '', tr = isAdmin ? 'block' : 'none'; l.innerHTML += `<div class="tab-item ${a}" onclick="selectTab('${t.id}')"><span style="display:flex;align-items:center;gap:8px;"><i class="${t.id === 'all' ? 'ph-fill ph-users' : 'ph-fill ph-folder'}"></i>${t.name}</span>${t.id !== 'all' ? `<i class="ph-fill ph-trash btn-del-team" style="display:${tr};" data-tooltip="Excluir" onclick="deleteTeam(event, '${t.id}', '${t.name}')"></i>` : ''}</div>`; }); aplicarTooltips();
+}
+window.selectTab = function(id) { currentTab = id; renderTabs(); window.renderGrid(); }
+window.abrirModalAddTeam = function() { const i = document.getElementById('new-team-input'), m = document.getElementById('modal-add-team'); if(i) i.value = ''; if(m) { m.classList.remove('hidden'); setTimeout(() => i && i.focus(), 100); } }
+window.confirmarAddTeam = async function() { const i = document.getElementById('new-team-input'); if(!i) return; const n = i.value.trim(); if (n) { const id = 'team_' + Date.now(); const { error } = await supabaseClient.from('teams').insert([{ id, name:n }]); if (error) return showToast("Erro.", "error"); teams.push({ id, name:n }); renderTabs(); fecharModalAddTeam(); showToast("Criada!"); } else showToast("Inválido!", "error"); }
+window.deleteTeam = function(e, id, tName) { e.stopPropagation(); abrirConfirm("Excluir?", `Apagar a equipe "${tName}"?`, async () => { await supabaseClient.from('teams').delete().eq('id', id); teams = teams.filter(t => t.id !== id); if (currentTab === id) currentTab = 'all'; renderTabs(); window.renderGrid(); showToast("Removida."); }); }
+
+window.renderGrid = function() {
+    const g = document.getElementById('users-grid'); if(!g) return; const sE = document.getElementById('main-search'), term = sE ? sE.value.toLowerCase() : ''; g.innerHTML = '';
+    let f = users.filter(u => (currentTab === 'all' || u.teamId === currentTab) && u.name.toLowerCase().includes(term));
+    if (f.length === 0) g.innerHTML = `<div class="empty-state"><i class="ph-duotone ph-users-slash"></i><h3>Nenhum membro</h3></div>`;
+    else f.forEach(u => { const t = teams.find(x => x.id === u.teamId)?.name || 'Sem Equipe', c = (isAdmin || String(loggedUserId) === String(u.id)) ? `openUserModal('${u.id}')` : `avisoAcessoNegado()`, p = (isAdmin || String(loggedUserId) === String(u.id)) ? 'cursor:pointer;' : 'cursor:not-allowed;'; g.innerHTML += `<div class="card-user" style="${p}" onclick="${c}"><div class="team-badge">${t}</div><img src="${u.avatar}" loading="lazy"><h3>${u.name}</h3></div>`; });
+    const sm = document.getElementById('stats-members'); if(sm) sm.innerText = f.length;
+}
+
+function renderAdminUsers() {
+    const list = document.getElementById('admin-users-list'), s = document.getElementById('admin-search-user'); if(!list) return;
+    const term = s ? s.value.toLowerCase() : ''; let f = users.filter(u => u.name.toLowerCase().includes(term));
+    if (f.length === 0) return list.innerHTML = `<p style="color:var(--muted);text-align:center;">Nenhum membro encontrado.</p>`;
+    
+    list.innerHTML = f.map(u => {
+        const t = teams.find(x => x.id === u.teamId)?.name || 'Sem Equipe';
+        const isAdm = u.is_admin === true;
+        const b = (u.pin && u.pin !== '0000') ? `<span style="color:var(--success);font-size:0.7rem;"><i class="ph-fill ph-lock-key"></i> Protegido</span>` : `<span style="color:var(--danger);font-size:0.7rem;"><i class="ph-fill ph-warning"></i> Sem Senha</span>`;
+        const adminBadge = isAdm ? `<span style="background: var(--accent); color: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-left: 5px;"><i class="ph-fill ph-crown"></i> ADMIN</span>` : '';
+        const btnAdmin = `<button onclick="toggleAdmin('${u.id}', ${isAdm})" style="background:none;border:none;color:${isAdm ? 'var(--warning)' : 'var(--muted)'};cursor:pointer;font-size:1.1rem;" data-tooltip="${isAdm ? 'Remover Admin' : 'Tornar Admin'}"><i class="ph-fill ph-crown"></i></button>`;
+        
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;flex-direction:column;">
+                <span style="font-weight:600;display:flex;align-items:center;gap:5px;">${u.name} ${b} ${adminBadge}</span>
+                <span style="font-size:0.75rem;color:var(--accent);">${t}</span>
+            </div>
+            <div style="display:flex;gap:10px;">
+                ${btnAdmin}
+                <button onclick="resetarPin('${u.id}','${u.name}')" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.8rem;" data-tooltip="Remover PIN"><i class="ph-bold ph-key"></i> Resetar</button>
+                <button onclick="delUser('${u.id}','${u.name}')" style="background:none;border:none;color:var(--danger);cursor:pointer;" data-tooltip="Eliminar Integrante"><i class="ph-fill ph-trash" style="font-size:1.1rem;"></i></button>
+            </div>
+        </div>`
+    }).join(''); 
+    aplicarTooltips();
+}
+
+window.toggleAdmin = async function(id, currentStatus) {
+    const newStatus = !currentStatus;
+    const { error } = await supabaseClient.from('users').update({ is_admin: newStatus }).eq('id', id);
+    if (error) return showToast("Erro ao atualizar permissão.", "error");
+    
+    const uIndex = users.findIndex(u => String(u.id) === String(id));
+    if (uIndex > -1) users[uIndex].is_admin = newStatus;
+    renderAdminUsers();
+    
+    if (String(id) === String(loggedUserId)) {
+        isAdmin = newStatus; aplicarControlesDeAcesso(); if (!newStatus) fecharAdmin();
+    }
+    showToast(newStatus ? "Privilégios de Admin concedidos!" : "Privilégios de Admin removidos.");
+}
+
+window.filtrarListaAdminUsers = function() { renderAdminUsers(); }
+
+window.addUser = async function() { const i = document.getElementById('new-user-name'); if(!i) return; const n = i.value.trim(); if (!n) return showToast("Nome inválido.", "error"); const nu = { id: Date.now(), name: n, pin: '0000', is_admin: false, teamId: currentTab === 'all' ? (teams[1]?.id || 'all') : currentTab, avatar: `https://ui-avatars.com/api/?name=${n}&background=38bdf8&color=fff` }; showToast("A guardar...", "info"); const { error } = await supabaseClient.from('users').insert([nu]); if (error) return showToast("Erro.", "error"); users.push(nu); i.value = ''; window.renderGrid(); renderAdminUsers(); showToast("Adicionado!"); }
+window.delUser = function(id, userName) { abrirConfirm("Excluir", `Remover "${userName}"?`, async () => { await supabaseClient.from('users').delete().eq('id', id); users = users.filter(u => String(u.id) !== String(id)); window.renderGrid(); renderAdminUsers(); showToast("Removido!"); }); }
+
+window.applyChartPreset = function() { window.renderCharts(); } 
+window.clearChartPreset = function() { const el = document.getElementById('chart-period-preset'); if(el) el.value = 'custom'; window.renderCharts(); }
+window.limparFiltroData = function() { const p = document.getElementById('chart-period-preset'), s = document.getElementById('chart-date-start'), e = document.getElementById('chart-date-end'); if(p) p.value = 'all'; if(s) { s.value = ''; } if(e) { e.value = ''; } window.renderCharts(); }
+
+window.renderCharts = async function() {
+    const p = document.getElementById('chart-period-preset'); if (!p) return;
+    const m = document.getElementById('chart-mode').value, src = document.getElementById('chart-search')?.value.toLowerCase() || '', is = document.getElementById('chart-date-start')?.value || '', ie = document.getElementById('chart-date-end')?.value || '';
+    let sd = new Date(), ed = new Date(); sd.setHours(0,0,0,0); ed.setHours(23,59,59,999);
+    
+    if (p.value === 'custom' && is && ie) { 
+        const [y1,m1,d1] = is.split('-'); sd = new Date(y1, m1-1, d1, 0,0,0); 
+        const [y2,m2,d2] = ie.split('-'); ed = new Date(y2, m2-1, d2, 23,59,59,999); 
+    } else { 
+        if (p.value === 'yesterday') { sd.setDate(sd.getDate()-1); ed.setDate(ed.getDate()-1); } 
+        else if (p.value === 'week') { sd.setDate(sd.getDate() - sd.getDay()); } 
+        else if (p.value === 'last_week') { sd.setDate(sd.getDate() - sd.getDay() - 7); ed.setDate(ed.getDate() - ed.getDay() - 1); } 
+        else if (p.value === 'month') { sd.setDate(1); } 
+        else if (p.value === 'all') { sd = new Date(2020,0,1); } 
+    }
+    
+    let { data: dbAp } = await supabaseClient.from('apontamentos').select('*').gte('inicio', sd.toISOString()).lte('inicio', ed.toISOString()).not('duracao_segundos', 'is', null); 
+    dbAp = dbAp || [];
+    
+    let lbl = [], hD = []; 
+    if (m === 'members') {
+        let uS = {}; 
+        users.forEach(u => { 
+            if (currentTab !== 'all' && u.teamId !== currentTab) return; 
+            if (src && !u.name.toLowerCase().includes(src)) return; 
+            uS[u.id] = { name: u.name, secs: 0 }; 
+        });
+        dbAp.forEach(ap => { 
+            if (uS[ap.usuario_id]) { uS[ap.usuario_id].secs += ap.duracao_segundos; } 
+        });
+        Object.values(uS).forEach(s => { 
+            lbl.push(s.name); 
+            hD.push((s.secs / 3600).toFixed(2)); 
+        });
+    } else {
+        let tS = {}; 
+        teams.forEach(t => { 
+            if (currentTab !== 'all' && t.id !== currentTab) return; 
+            tS[t.id] = { name: t.name, secs: 0 }; 
+        });
+        dbAp.forEach(ap => { 
+            const u = users.find(x => String(x.id) === String(ap.usuario_id)); 
+            if (u && tS[u.teamId]) { tS[u.teamId].secs += ap.duracao_segundos; } 
+        });
+        Object.values(tS).forEach(s => { 
+            lbl.push(s.name); 
+            hD.push((s.secs / 3600).toFixed(2)); 
+        });
+    }
+    
+    const ctx = document.getElementById('teamChart').getContext('2d'); 
+    if (chartInstances.length > 0) { chartInstances.forEach(c => c.destroy()); chartInstances = []; }
+    
+    chartInstances.push(new Chart(ctx, { 
+        type: 'bar', 
+        data: { labels: lbl, datasets: [ { label: 'Horas Trabalhadas', data: hD, backgroundColor: '#38bdf8', borderRadius: 4 } ] }, 
+        options: { 
+            responsive: true, maintainAspectRatio: false, 
+            scales: { y: { title: { display: true, text: 'Horas (h)', color: '#38bdf8' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#38bdf8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8', font: {weight: 'bold'} } } }, 
+            plugins: { legend: { labels: { color: '#f8fafc' } } } 
+        } 
+    }));
+}
+
+window.exportarDadosCSV = async function() {
+    if(chartInstances.length === 0) return showToast("Sem dados.", "error"); 
+    showToast("A gerar CSV..."); 
+    const c = chartInstances[0];
+    let csv = "data:text/csv;charset=utf-8,Nome,Horas Trabalhadas\n"; 
+    for(let i=0; i<c.data.labels.length; i++) { csv += `${c.data.labels[i]},${c.data.datasets[0].data[i]}\n`; }
+    const a = document.createElement("a"); a.href = encodeURI(csv); a.download = "relatorio_horas.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a); showToast("Concluído!");
+}
+
+window.abrirCriarConta = function() {
+    fecharModalSelectUser(); const sel = document.getElementById('new-self-user-team'); if(sel) { sel.innerHTML = '<option value="all">Sem Equipe</option>'; teams.forEach(t => { if (t.id !== 'all') sel.innerHTML += `<option value="${t.id}">${t.name}</option>`; }); }
+    const m = document.getElementById('modal-create-account'), i = document.getElementById('new-self-user-name'); if(m) m.classList.remove('hidden'); if(i) { i.value = ''; setTimeout(() => i.focus(), 100); }
+}
+window.fecharCriarConta = function() { const modal = document.getElementById('modal-create-account'); if(modal) modal.classList.add('hidden'); }
+
+window.criarPropriaConta = async function() {
+    const iN = document.getElementById('new-self-user-name'), iT = document.getElementById('new-self-user-team'); if(!iN || !iT) return; const n = iN.value.trim(), t = iT.value; if (!n) return showToast("Digite seu nome!", "error");
+    const nu = { id: Date.now(), name: n, teamId: t, pin: '0000', is_admin: false, avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=38bdf8&color=fff` };
+    await supabaseClient.from('users').insert([nu]); users.push(nu); fecharCriarConta(); showToast(`Bem-vindo, ${n}.`); window.renderGrid(); 
+    const m = document.getElementById('modal-select-user'), s = document.getElementById('input-search-user'); if(m) m.classList.remove('hidden'); if(s) s.value = n; setTimeout(() => confirmarSelectUser(), 500); 
+}
+
+window.abrirModalAddTempoManual = function() {
+    // Pode utilizar a lógica de iniciar o cronómetro passando uma data manual, se desejar expandir.
+    showToast("A função de adicionar registro manual passado será ativada na próxima versão.", "info");
 }
